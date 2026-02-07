@@ -104,6 +104,7 @@ class StatCard extends StatelessWidget {
                         letterSpacing: -0.5,
                       ),
                       maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),

@@ -4,8 +4,11 @@ import 'package:flutter_redux/flutter_redux.dart';
 import '../../theme/app_theme.dart';
 import '../../store/app_state.dart';
 import '../../store/auth_actions.dart';
+import '../../store/notification_actions.dart';
 import '../../services/auth_storage.dart';
+import '../../services/api_client.dart';
 import '../../utils/responsive.dart';
+import '../../demo_data/notifications_demo.dart';
 
 /// Header matching React's Header.jsx - Responsive version
 class AppHeader extends StatelessWidget {
@@ -296,6 +299,16 @@ class AppHeader extends StatelessWidget {
                 ],
               ),
             ),
+            PopupMenuItem(
+              value: 'support',
+              child: Row(
+                children: [
+                  Icon(LucideIcons.info, size: 16, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+                  const SizedBox(width: 8),
+                  const Text('Support'),
+                ],
+              ),
+            ),
             const PopupMenuDivider(),
             PopupMenuItem(
               value: 'logout',
@@ -326,68 +339,183 @@ class AppHeader extends StatelessWidget {
 
   void _showNotifications(BuildContext context) {
     final responsive = Responsive(context);
-    
+    final store = StoreProvider.of<AppState>(context);
+
+    // If no notifications in store, seed demo data and load from API
+    if (store.state.notification.notifications.isEmpty) {
+      _loadNotifications(store);
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: responsive.isMobile,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) {
-        final isDark = Theme.of(context).brightness == Brightness.dark;
-        
-        return Container(
-          height: responsive.isMobile ? responsive.screenHeight * 0.7 : null,
-          padding: EdgeInsets.all(responsive.value(mobile: 16, tablet: 20, desktop: 24)),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+        return StoreConnector<AppState, NotificationState>(
+          converter: (s) => s.state.notification,
+          builder: (ctx, notifState) {
+            final notifications = notifState.notifications;
+
+            return Container(
+              height: responsive.isMobile ? responsive.screenHeight * 0.7 : 420,
+              padding: EdgeInsets.all(responsive.value(mobile: 16, tablet: 20, desktop: 24)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Notifications',
-                    style: TextStyle(
-                      fontSize: responsive.value(mobile: 16, tablet: 17, desktop: 18),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      // Mark all as read
-                    },
-                    child: const Text('Mark all read'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Empty state
-              Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(
-                        LucideIcons.bell,
-                        size: responsive.value(mobile: 40, tablet: 44, desktop: 48),
-                        color: (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground).withOpacity(0.2),
-                      ),
-                      const SizedBox(height: 16),
                       Text(
-                        'No notifications',
+                        'Notifications',
                         style: TextStyle(
-                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                          fontSize: responsive.value(mobile: 16, tablet: 17, desktop: 18),
+                          fontWeight: FontWeight.w600,
                         ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          store.dispatch(MarkAllNotificationsAsRead());
+                        },
+                        child: const Text('Mark all read'),
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: notifications.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  LucideIcons.bell,
+                                  size: responsive.value(mobile: 40, tablet: 44, desktop: 48),
+                                  color: (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground).withOpacity(0.2),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No notifications',
+                                  style: TextStyle(
+                                    color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: notifications.length,
+                            separatorBuilder: (_, __) => Divider(
+                              height: 1,
+                              color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5),
+                            ),
+                            itemBuilder: (ctx, index) {
+                              final n = notifications[index];
+                              return ListTile(
+                                leading: Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: n.read ? Colors.transparent : AppTheme.primaryColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                title: Text(
+                                  n.title,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: n.read ? FontWeight.normal : FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  n.message,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: Text(
+                                  n.time,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                                  ),
+                                ),
+                                onTap: () {
+                                  store.dispatch(MarkNotificationAsRead(n.id));
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
+  }
+
+  /// Load notifications from API with demo data fallback
+  Future<void> _loadNotifications(dynamic store) async {
+    store.dispatch(FetchNotificationsStart());
+    try {
+      final result = await ApiClient.getNotifications();
+      if (result['success'] == true && result['data'] != null) {
+        final data = result['data'] as List;
+        if (data.isNotEmpty) {
+          final items = data.map((e) {
+            final map = e as Map<String, dynamic>;
+            return NotificationItem(
+              id: (map['notification_id'] ?? map['id'] ?? '').toString(),
+              title: map['title'] ?? '',
+              message: map['message'] ?? '',
+              time: _formatNotifTime(map['created_at']),
+              read: map['is_read'] == true,
+            );
+          }).toList();
+          store.dispatch(FetchNotificationsSuccess(items));
+          return;
+        }
+      }
+      // Fallback to demo data
+      _seedDemoNotifications(store);
+    } catch (e) {
+      debugPrint('[Notifications] API error: $e – falling back to demo data');
+      _seedDemoNotifications(store);
+    }
+  }
+
+  void _seedDemoNotifications(dynamic store) {
+    final items = NotificationsDemo.notifications.map((e) {
+      return NotificationItem(
+        id: e['notification_id'] as String,
+        title: e['title'] as String,
+        message: e['message'] as String,
+        time: _formatNotifTime(e['created_at']),
+        read: e['is_read'] == true,
+      );
+    }).toList();
+    store.dispatch(FetchNotificationsSuccess(items));
+  }
+
+  static String _formatNotifTime(dynamic createdAt) {
+    if (createdAt == null) return '';
+    try {
+      final dt = DateTime.parse(createdAt.toString());
+      final diff = DateTime.now().difference(dt);
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      return '${diff.inDays}d ago';
+    } catch (_) {
+      return createdAt.toString();
+    }
   }
 }

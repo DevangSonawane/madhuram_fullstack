@@ -10,8 +10,10 @@ import '../components/ui/mad_card.dart';
 import '../components/ui/mad_button.dart';
 import '../components/ui/mad_badge.dart';
 import '../components/ui/mad_input.dart';
+import '../components/ui/mad_select.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
+import '../demo_data/settings_demo.dart';
 
 /// Profile page - Responsive version
 class ProfilePage extends StatefulWidget {
@@ -23,35 +25,79 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  List<User> _users = [];
+  // START WITH DEMO DATA – never show blank
+  List<User> _users = SettingsDemo.users
+      .map((e) => User.fromJson(e))
+      .toList();
   bool _loadingUsers = false;
+  final TextEditingController _userSearchController = TextEditingController();
+  static const List<MadSelectOption<String>> _roleOptions = [
+    MadSelectOption(value: 'admin', label: 'Administrator'),
+    MadSelectOption(value: 'operational_manager', label: 'Operational Manager'),
+    MadSelectOption(value: 'po_officer', label: 'PO Officer'),
+    MadSelectOption(value: 'labour', label: 'Labour'),
+  ];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    // Try real API in background; demo data already visible
     _loadUsers();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _userSearchController.dispose();
     super.dispose();
+  }
+
+  /// Seed with demo users when API is unavailable
+  void _seedDemoUsers() {
+    debugPrint('[Profile] Users API unavailable – falling back to demo data');
+    setState(() {
+      _users = SettingsDemo.users.map((e) => User.fromJson(e)).toList();
+      _loadingUsers = false;
+    });
   }
 
   Future<void> _loadUsers() async {
     setState(() => _loadingUsers = true);
-    final result = await ApiClient.getUsers();
-    if (!mounted) return;
-    if (result['success'] == true) {
-      final data = result['data'] as List;
-      setState(() {
-        _users = data.map((e) => User.fromJson(e)).toList();
-        _loadingUsers = false;
-      });
-    } else {
-      setState(() => _loadingUsers = false);
+    try {
+      final result = await ApiClient.getUsers();
+      if (!mounted) return;
+      if (result['success'] == true) {
+        final data = result['data'] as List;
+        final loaded = data.map((e) => User.fromJson(e)).toList();
+        if (loaded.isEmpty) {
+          _seedDemoUsers();
+        } else {
+          setState(() {
+            _users = loaded;
+            _loadingUsers = false;
+          });
+        }
+      } else {
+        _seedDemoUsers();
+      }
+    } catch (e) {
+      debugPrint('[Profile] Users API error: $e – falling back to demo data');
+      if (!mounted) return;
+      _seedDemoUsers();
     }
+  }
+
+  List<User> get _filteredUsers {
+    final q = _userSearchController.text.trim().toLowerCase();
+    if (q.isEmpty) return _users;
+    return _users.where((u) {
+      return (u.name.toLowerCase().contains(q)) ||
+          (u.email.toLowerCase().contains(q)) ||
+          (u.username?.toLowerCase().contains(q) ?? false) ||
+          (u.role.toLowerCase().contains(q)) ||
+          (_getRoleName(u.role).toLowerCase().contains(q));
+    }).toList();
   }
 
   @override
@@ -138,49 +184,92 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
     return StoreConnector<AppState, AuthState>(
       converter: (store) => store.state.auth,
       builder: (context, auth) {
+        // Use demo user data if auth state is empty
+        final demoUser = SettingsDemo.demoUser;
+        final userName = auth.userName ?? demoUser['name'] as String;
+        final userEmail = auth.userEmail ?? demoUser['email'] as String;
+        final userPhone = auth.userPhone ?? demoUser['phone_number'] as String;
+        final userRole = auth.userRole ?? demoUser['role'] as String;
+
+        // Create a merged auth state that has demo values as fallback
+        final effectiveAuth = auth.user != null
+            ? auth
+            : auth.copyWith(
+                user: demoUser,
+                isAuthenticated: true,
+              );
+
         return SingleChildScrollView(
-          child: MadCard(
-            child: Padding(
-              padding: EdgeInsets.all(responsive.value(mobile: 16, tablet: 20, desktop: 24)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Profile header - stack on mobile
-                  if (responsive.isMobile)
-                    Column(
-                      children: [
-                        _buildAvatar(auth, responsive),
-                        const SizedBox(height: 16),
-                        _buildProfileInfo(auth, isDark, responsive, centered: true),
-                      ],
-                    )
-                  else
-                    Row(
-                      children: [
-                        _buildAvatar(auth, responsive),
-                        SizedBox(width: responsive.value(mobile: 16, tablet: 20, desktop: 24)),
-                        Expanded(child: _buildProfileInfo(auth, isDark, responsive)),
-                      ],
-                    ),
-                  SizedBox(height: responsive.value(mobile: 24, tablet: 28, desktop: 32)),
-                  const Divider(),
-                  SizedBox(height: responsive.value(mobile: 16, tablet: 20, desktop: 24)),
-                  Text(
-                    'Personal Information',
-                    style: TextStyle(
-                      fontSize: responsive.value(mobile: 16, tablet: 17, desktop: 18),
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
-                    ),
+          child: Column(
+            children: [
+              MadCard(
+                child: Padding(
+                  padding: EdgeInsets.all(responsive.value(mobile: 16, tablet: 20, desktop: 24)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Profile header - stack on mobile
+                      if (responsive.isMobile)
+                        Column(
+                          children: [
+                            _buildAvatar(effectiveAuth, responsive),
+                            const SizedBox(height: 16),
+                            _buildProfileInfo(effectiveAuth, isDark, responsive, centered: true),
+                          ],
+                        )
+                      else
+                        Row(
+                          children: [
+                            _buildAvatar(effectiveAuth, responsive),
+                            SizedBox(width: responsive.value(mobile: 16, tablet: 20, desktop: 24)),
+                            Expanded(child: _buildProfileInfo(effectiveAuth, isDark, responsive)),
+                          ],
+                        ),
+                      SizedBox(height: responsive.value(mobile: 24, tablet: 28, desktop: 32)),
+                      const Divider(),
+                      SizedBox(height: responsive.value(mobile: 16, tablet: 20, desktop: 24)),
+                      Text(
+                        'Personal Information',
+                        style: TextStyle(
+                          fontSize: responsive.value(mobile: 16, tablet: 17, desktop: 18),
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildInfoRow('Name', userName, isDark, responsive),
+                      _buildInfoRow('Email', userEmail, isDark, responsive),
+                      _buildInfoRow('Phone', userPhone, isDark, responsive),
+                      _buildInfoRow('Role', _getRoleName(userRole), isDark, responsive),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  _buildInfoRow('Name', auth.userName ?? '-', isDark, responsive),
-                  _buildInfoRow('Email', auth.userEmail ?? '-', isDark, responsive),
-                  _buildInfoRow('Phone', auth.userPhone ?? '-', isDark, responsive),
-                  _buildInfoRow('Role', _getRoleName(auth.userRole ?? ''), isDark, responsive),
-                ],
+                ),
               ),
-            ),
+              SizedBox(height: responsive.value(mobile: 16, tablet: 20, desktop: 24)),
+              // App Info section
+              MadCard(
+                child: Padding(
+                  padding: EdgeInsets.all(responsive.value(mobile: 16, tablet: 20, desktop: 24)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'App Information',
+                        style: TextStyle(
+                          fontSize: responsive.value(mobile: 16, tablet: 17, desktop: 18),
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildInfoRow('Version', SettingsDemo.appVersion, isDark, responsive),
+                      _buildInfoRow('Build', SettingsDemo.buildNumber, isDark, responsive),
+                      _buildInfoRow('Platform', 'Flutter', isDark, responsive),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -411,20 +500,41 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
                   text: responsive.isMobile ? null : 'Add User',
                   icon: LucideIcons.plus,
                   size: ButtonSize.sm,
-                  onPressed: () => _showAddUserDialog(),
+                  onPressed: () => _showAddUserDialog(context, isDark, responsive),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            MadSearchInput(
+              controller: _userSearchController,
+              hintText: 'Search by name, email, username or role...',
+              onChanged: (_) => setState(() {}),
+              onClear: () {
+                _userSearchController.clear();
+                setState(() {});
+              },
+              width: responsive.isMobile ? double.infinity : 320,
             ),
             const SizedBox(height: 16),
             Expanded(
               child: MadCard(
-                child: ListView.builder(
-                  itemCount: _users.length,
-                  itemBuilder: (context, index) {
-                    final user = _users[index];
-                    return _buildUserListTile(user, isDark, responsive);
-                  },
-                ),
+                child: _filteredUsers.isEmpty
+                    ? Center(
+                        child: Text(
+                          _userSearchController.text.trim().isNotEmpty ? 'No users match your search' : 'No users yet',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: _filteredUsers.length,
+                        itemBuilder: (context, index) {
+                          final user = _filteredUsers[index];
+                          return _buildUserListTile(user, isDark, responsive);
+                        },
+                      ),
               ),
             ),
           ],
@@ -467,6 +577,8 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
                   Text(
                     user.name,
                     style: const TextStyle(fontWeight: FontWeight.w500),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                   Text(
                     user.email,
@@ -474,12 +586,33 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
                       fontSize: 12,
                       color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
                     ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                  if (user.username != null && user.username!.isNotEmpty)
+                    Text(
+                      user.username!,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground).withOpacity(0.8),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  const SizedBox(height: 4),
+                  MadBadge(
+                    text: _getRoleName(user.role),
+                    variant: BadgeVariant.secondary,
                   ),
                 ],
               ),
             ),
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, size: 18),
+              onSelected: (value) {
+                if (value == 'edit') _showEditUserDialog(context, user, isDark, responsive);
+                else if (value == 'delete') _showDeleteUserDialog(context, user);
+              },
               itemBuilder: (context) => [
                 const PopupMenuItem(value: 'edit', child: Text('Edit')),
                 const PopupMenuItem(
@@ -504,8 +637,12 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
           ),
         ),
       ),
-      title: Text(user.name),
-      subtitle: Text(user.email),
+      title: Text(user.name, overflow: TextOverflow.ellipsis, maxLines: 1),
+      subtitle: Text(
+        user.username != null && user.username!.isNotEmpty ? '${user.username} · ${user.email}' : user.email,
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -516,6 +653,10 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
           const SizedBox(width: 8),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, size: 18),
+            onSelected: (value) {
+              if (value == 'edit') _showEditUserDialog(context, user, isDark, responsive);
+              else if (value == 'delete') _showDeleteUserDialog(context, user);
+            },
             itemBuilder: (context) => [
               const PopupMenuItem(value: 'edit', child: Text('Edit')),
               const PopupMenuItem(
@@ -547,6 +688,8 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
             Text(
               value,
               style: const TextStyle(fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
             ),
           ],
         ),
@@ -570,6 +713,8 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
             child: Text(
               value,
               style: const TextStyle(fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
             ),
           ),
         ],
@@ -662,6 +807,8 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
     switch (role) {
       case 'admin':
         return 'Administrator';
+      case 'operational_manager':
+        return 'Operational Manager';
       case 'project_manager':
         return 'Project Manager';
       case 'po_officer':
@@ -673,67 +820,24 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
     }
   }
 
-  void _showAddUserDialog() {
-    final responsive = Responsive(context);
-    
+  void _showAddUserDialog(BuildContext context, bool isDark, Responsive responsive) {
     if (responsive.isMobile) {
-      // Use bottom sheet on mobile
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
-        builder: (context) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Add New User',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  MadInput(labelText: 'Name', hintText: 'Enter full name'),
-                  const SizedBox(height: 16),
-                  MadInput(labelText: 'Email', hintText: 'Enter email'),
-                  const SizedBox(height: 16),
-                  MadInput(labelText: 'Phone', hintText: 'Enter phone number'),
-                  const SizedBox(height: 16),
-                  MadInput(labelText: 'Password', hintText: 'Enter password', obscureText: true),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: MadButton(
-                          text: 'Cancel',
-                          variant: ButtonVariant.outline,
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: MadButton(
-                          text: 'Add User',
-                          onPressed: () {
-                            Navigator.pop(context);
-                            _loadUsers();
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+            child: _AddUserForm(
+              roleOptions: _roleOptions,
+              onCancel: () => Navigator.pop(ctx),
+              onSuccess: () {
+                Navigator.pop(ctx);
+                _loadUsers();
+              },
             ),
           ),
         ),
@@ -741,37 +845,401 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
     } else {
       showDialog(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (ctx) => AlertDialog(
           title: const Text('Add New User'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                MadInput(labelText: 'Name', hintText: 'Enter full name'),
-                const SizedBox(height: 16),
-                MadInput(labelText: 'Email', hintText: 'Enter email'),
-                const SizedBox(height: 16),
-                MadInput(labelText: 'Phone', hintText: 'Enter phone number'),
-                const SizedBox(height: 16),
-                MadInput(labelText: 'Password', hintText: 'Enter password', obscureText: true),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
+          content: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: responsive.dialogWidth()),
+            child: _AddUserForm(
+              roleOptions: _roleOptions,
+              onCancel: () => Navigator.pop(ctx),
+              onSuccess: () {
+                Navigator.pop(ctx);
                 _loadUsers();
               },
-              child: const Text('Add'),
             ),
-          ],
+          ),
         ),
       );
     }
+  }
+
+  void _showEditUserDialog(BuildContext context, User user, bool isDark, Responsive responsive) {
+    if (responsive.isMobile) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: SafeArea(
+            child: _EditUserForm(
+              user: user,
+              roleOptions: _roleOptions,
+              onCancel: () => Navigator.pop(ctx),
+              onSuccess: () {
+                Navigator.pop(ctx);
+                _loadUsers();
+              },
+            ),
+          ),
+        ),
+      );
+    } else {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Edit User'),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: responsive.dialogWidth()),
+            child: _EditUserForm(
+              user: user,
+              roleOptions: _roleOptions,
+              onCancel: () => Navigator.pop(ctx),
+              onSuccess: () {
+                Navigator.pop(ctx);
+                _loadUsers();
+              },
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _showDeleteUserDialog(BuildContext context, User user) {
+    final messenger = ScaffoldMessenger.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete User'),
+        content: Text(
+          'Are you sure you want to delete "${user.name}" (${user.email})? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final result = await ApiClient.deleteUser(user.id);
+              if (!mounted) return;
+              if (result['success'] == true) {
+                _loadUsers();
+              } else {
+                messenger.showSnackBar(
+                  SnackBar(content: Text(result['message']?.toString() ?? 'Failed to delete user')),
+                );
+              }
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Form content for Add User dialog (stateful for controllers and role)
+class _AddUserForm extends StatefulWidget {
+  final List<MadSelectOption<String>> roleOptions;
+  final VoidCallback onCancel;
+  final VoidCallback onSuccess;
+
+  const _AddUserForm({
+    required this.roleOptions,
+    required this.onCancel,
+    required this.onSuccess,
+  });
+
+  @override
+  State<_AddUserForm> createState() => _AddUserFormState();
+}
+
+class _AddUserFormState extends State<_AddUserForm> {
+  final _nameController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
+  String _selectedRole = 'labour';
+  String? _errorText;
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _usernameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final name = _nameController.text.trim();
+    final username = _usernameController.text.trim();
+    final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
+    final password = _passwordController.text;
+
+    if (name.isEmpty || username.isEmpty || email.isEmpty || phone.isEmpty || password.isEmpty) {
+      setState(() => _errorText = 'Please fill all required fields');
+      return;
+    }
+    setState(() {
+      _errorText = null;
+      _loading = true;
+    });
+    final result = await ApiClient.signup({
+      'name': name,
+      'username': username,
+      'email': email,
+      'phone_number': phone,
+      'password': password,
+      'role': _selectedRole,
+    });
+    if (!mounted) return;
+    setState(() => _loading = false);
+    if (result['success'] == true) {
+      widget.onSuccess();
+    } else {
+      setState(() => _errorText = result['message']?.toString() ?? 'Failed to add user');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MadInput(
+            controller: _nameController,
+            labelText: 'Name',
+            hintText: 'Enter full name',
+          ),
+          const SizedBox(height: 16),
+          MadInput(
+            controller: _usernameController,
+            labelText: 'Username',
+            hintText: 'Enter username',
+          ),
+          const SizedBox(height: 16),
+          MadInput(
+            controller: _emailController,
+            labelText: 'Email',
+            hintText: 'Enter email',
+            keyboardType: TextInputType.emailAddress,
+          ),
+          const SizedBox(height: 16),
+          MadInput(
+            controller: _phoneController,
+            labelText: 'Phone',
+            hintText: 'Enter phone number',
+            keyboardType: TextInputType.phone,
+          ),
+          const SizedBox(height: 16),
+          MadSelect<String>(
+            labelText: 'Role',
+            value: _selectedRole,
+            options: widget.roleOptions,
+            onChanged: (v) => setState(() => _selectedRole = v ?? 'labour'),
+            placeholder: 'Select role',
+          ),
+          const SizedBox(height: 16),
+          MadInput(
+            controller: _passwordController,
+            labelText: 'Password',
+            hintText: 'Enter password',
+            obscureText: true,
+          ),
+          if (_errorText != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _errorText!,
+              style: const TextStyle(color: Colors.red, fontSize: 13),
+            ),
+          ],
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: MadButton(
+                  text: 'Cancel',
+                  variant: ButtonVariant.outline,
+                  onPressed: _loading ? null : widget.onCancel,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: MadButton(
+                  text: 'Add User',
+                  onPressed: _loading ? null : _submit,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Form content for Edit User dialog
+class _EditUserForm extends StatefulWidget {
+  final User user;
+  final List<MadSelectOption<String>> roleOptions;
+  final VoidCallback onCancel;
+  final VoidCallback onSuccess;
+
+  const _EditUserForm({
+    required this.user,
+    required this.roleOptions,
+    required this.onCancel,
+    required this.onSuccess,
+  });
+
+  @override
+  State<_EditUserForm> createState() => _EditUserFormState();
+}
+
+class _EditUserFormState extends State<_EditUserForm> {
+  late final TextEditingController _usernameController;
+  late final TextEditingController _emailController;
+  late final TextEditingController _phoneController;
+  late final TextEditingController _projectListController;
+  late String _selectedRole;
+  String? _errorText;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameController = TextEditingController(text: widget.user.username ?? widget.user.name);
+    _emailController = TextEditingController(text: widget.user.email);
+    _phoneController = TextEditingController(text: widget.user.phoneNumber ?? '');
+    _projectListController = TextEditingController(
+      text: widget.user.projectList?.join(', ') ?? '',
+    );
+    _selectedRole = widget.user.role;
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _projectListController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final username = _usernameController.text.trim();
+    final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
+    final projectListStr = _projectListController.text.trim();
+    final projectList = projectListStr.isEmpty
+        ? <String>[]
+        : projectListStr.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+
+    if (username.isEmpty || email.isEmpty) {
+      setState(() => _errorText = 'Username and email are required');
+      return;
+    }
+    setState(() {
+      _errorText = null;
+      _loading = true;
+    });
+    final result = await ApiClient.updateUser(widget.user.id, {
+      'username': username,
+      'email': email,
+      'phone_number': phone.isEmpty ? null : phone,
+      'role': _selectedRole,
+      'project_list': projectList,
+    });
+    if (!mounted) return;
+    setState(() => _loading = false);
+    if (result['success'] == true) {
+      widget.onSuccess();
+    } else {
+      setState(() => _errorText = result['message']?.toString() ?? 'Failed to update user');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MadInput(
+            controller: _usernameController,
+            labelText: 'Username',
+            hintText: 'Enter username',
+          ),
+          const SizedBox(height: 16),
+          MadInput(
+            controller: _emailController,
+            labelText: 'Email',
+            hintText: 'Enter email',
+            keyboardType: TextInputType.emailAddress,
+          ),
+          const SizedBox(height: 16),
+          MadInput(
+            controller: _phoneController,
+            labelText: 'Phone',
+            hintText: 'Enter phone number',
+            keyboardType: TextInputType.phone,
+          ),
+          const SizedBox(height: 16),
+          MadSelect<String>(
+            labelText: 'Role',
+            value: _selectedRole,
+            options: widget.roleOptions,
+            onChanged: (v) => setState(() => _selectedRole = v ?? 'labour'),
+            placeholder: 'Select role',
+          ),
+          const SizedBox(height: 16),
+          MadInput(
+            controller: _projectListController,
+            labelText: 'Project IDs',
+            hintText: 'Comma-separated project IDs',
+          ),
+          if (_errorText != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _errorText!,
+              style: const TextStyle(color: Colors.red, fontSize: 13),
+            ),
+          ],
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: MadButton(
+                  text: 'Cancel',
+                  variant: ButtonVariant.outline,
+                  onPressed: _loading ? null : widget.onCancel,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: MadButton(
+                  text: 'Save',
+                  onPressed: _loading ? null : _submit,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

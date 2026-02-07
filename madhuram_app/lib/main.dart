@@ -8,6 +8,7 @@ import 'store/app_state.dart';
 import 'store/auth_reducer.dart';
 import 'store/auth_actions.dart';
 import 'store/project_actions.dart';
+import 'store/notification_actions.dart';
 
 // Models
 import 'models/project.dart';
@@ -17,8 +18,14 @@ import 'services/auth_storage.dart';
 import 'services/http_overrides.dart';
 import 'services/api_client.dart';
 
+// Demo data
+import 'demo_data/notifications_demo.dart';
+
 // Theme
 import 'theme/app_theme.dart';
+
+// Animations
+import 'utils/animations.dart';
 
 // Pages
 import 'pages/login_page.dart';
@@ -58,6 +65,34 @@ import 'pages/audit_logs_page.dart';
 // Create store globally
 late Store<AppState> store;
 
+/// Named routes with fade transition (used by onGenerateRoute and routes)
+final Map<String, Widget Function(BuildContext)> _appRoutes = {
+  '/login': (context) => const LoginPage(),
+  '/projects': (context) => const ProjectSelectionPage(),
+  '/dashboard': (context) => const DashboardPage(),
+  '/boq': (context) => const BOQPage(),
+  '/mas': (context) => const MASPageFull(),
+  '/samples': (context) => const SamplesPageFull(),
+  '/purchase-requests': (context) => const PurchaseRequestsPageFull(),
+  '/vendor-comparison': (context) => const VendorComparisonPageFull(),
+  '/purchase-orders': (context) => const PurchaseOrdersPageFull(),
+  '/vendors': (context) => const VendorsPageFull(),
+  '/challans': (context) => const ChallansPageFull(),
+  '/mer': (context) => const MERPageFull(),
+  '/mir': (context) => const MIRPageFull(),
+  '/itr': (context) => const ITRPageFull(),
+  '/billing': (context) => const BillingPageFull(),
+  '/stock-areas': (context) => const StockAreasPage(),
+  '/materials': (context) => const MaterialsPage(),
+  '/stock-transfers': (context) => const StockTransfersPage(),
+  '/consumption': (context) => const ConsumptionPage(),
+  '/returns': (context) => const ReturnsPage(),
+  '/documents': (context) => const DocumentsPageFull(),
+  '/reports': (context) => const ReportsPageFull(),
+  '/audit-logs': (context) => const AuditLogsPageFull(),
+  '/profile': (context) => const ProfilePage(),
+};
+
 void main() async {
   // Ensure Flutter binding is initialized
   WidgetsFlutterBinding.ensureInitialized();
@@ -76,11 +111,16 @@ void main() async {
   
   // Restore auth state from storage before running app
   await _restoreAuthState();
-  
+
+  // Seed notifications (will be overwritten when API is available)
+  _seedDemoNotifications();
+
   runApp(MyApp(store: store));
 }
 
-/// Restore authentication state from storage
+/// Restore authentication state from storage.
+/// Auth is restored synchronously (from local storage).
+/// Project restoration is done in the background – never blocks app startup.
 Future<void> _restoreAuthState() async {
   try {
     final hasUser = await AuthStorage.hasUser();
@@ -88,35 +128,86 @@ Future<void> _restoreAuthState() async {
       final user = await AuthStorage.getUser();
       if (user != null) {
         store.dispatch(LoginSuccess(user));
-        
-        // Also try to restore selected project
+
+        // Restore selected project from local storage WITHOUT calling API.
+        // This ensures instant startup. The API fetch is done later when
+        // ProjectSelectionPage loads.
         final savedProjectId = await AuthStorage.getSelectedProjectId();
-        if (savedProjectId != null) {
-          // Fetch projects and restore selection
-          final result = await ApiClient.getProjects();
-          if (result['success'] == true) {
-            final data = result['data'];
-            final List<dynamic> projectList = data is List ? data : [];
-            final projectMaps = projectList
-                .map((e) => e as Map<String, dynamic>)
-                .toList();
-            store.dispatch(FetchProjectsSuccess(projectMaps));
-            
-            // Find and select the saved project using Project model for comparison
-            final projects = projectMaps.map((m) => Project.fromJson(m)).toList();
-            final savedProject = projects.firstWhere(
-              (p) => p.id == savedProjectId,
-              orElse: () => Project(id: '', name: ''),
-            );
-            if (savedProject.id.isNotEmpty) {
-              store.dispatch(SelectProject(savedProject.toMap()));
-            }
-          }
+        if (savedProjectId != null && savedProjectId.isNotEmpty) {
+          // Create a minimal project map so MainLayout sees a selected project
+          // and doesn't redirect to /projects.  The full project data will be
+          // loaded when the user visits any page that needs it.
+          store.dispatch(SelectProject({
+            'project_id': savedProjectId,
+            'project_name': 'Loading…',
+          }));
+
+          // Fire-and-forget: try to fetch full project list in background
+          _restoreProjectsInBackground(savedProjectId);
         }
       }
     }
   } catch (e) {
     debugPrint('Error restoring auth state: $e');
+  }
+}
+
+/// Fetch projects in background and update the selected project with full data.
+/// Never blocks – runs after the UI is already visible.
+void _restoreProjectsInBackground(String savedProjectId) {
+  ApiClient.getProjects().then((result) {
+    if (result['success'] == true) {
+      final data = result['data'];
+      final List<dynamic> projectList = data is List ? data : [];
+      final projectMaps = projectList
+          .map((e) => e as Map<String, dynamic>)
+          .toList();
+      store.dispatch(FetchProjectsSuccess(projectMaps));
+
+      final projects = projectMaps.map((m) => Project.fromJson(m)).toList();
+      final savedProject = projects.firstWhere(
+        (p) => p.id == savedProjectId,
+        orElse: () => Project(id: '', name: ''),
+      );
+      if (savedProject.id.isNotEmpty) {
+        store.dispatch(SelectProject(savedProject.toMap()));
+      }
+    }
+  }).catchError((e) {
+    debugPrint('[Main] Background project restore failed: $e');
+  });
+}
+
+/// Seed demo notifications into the store so the UI is never empty
+void _seedDemoNotifications() {
+  try {
+    final items = NotificationsDemo.notifications.map((e) {
+      String time = '';
+      try {
+        final dt = DateTime.parse(e['created_at'] as String);
+        final diff = DateTime.now().difference(dt);
+        if (diff.inMinutes < 60) {
+          time = '${diff.inMinutes}m ago';
+        } else if (diff.inHours < 24) {
+          time = '${diff.inHours}h ago';
+        } else {
+          time = '${diff.inDays}d ago';
+        }
+      } catch (_) {
+        time = '';
+      }
+      return NotificationItem(
+        id: e['notification_id'] as String,
+        title: e['title'] as String,
+        message: e['message'] as String,
+        time: time,
+        read: e['is_read'] == true,
+      );
+    }).toList();
+    store.dispatch(FetchNotificationsSuccess(items));
+    debugPrint('[Main] Seeded ${items.length} demo notifications');
+  } catch (e) {
+    debugPrint('[Main] Failed to seed demo notifications: $e');
   }
 }
 
@@ -147,49 +238,21 @@ class MyApp extends StatelessWidget {
                 ? ThemeMode.dark
                 : ThemeMode.light,
             home: const AppRouter(),
-            routes: {
-              // Auth
-              '/login': (context) => const LoginPage(),
-              '/projects': (context) => const ProjectSelectionPage(),
-              
-              // Main
-              '/dashboard': (context) => const DashboardPage(),
-              
-              // Project Management
-              '/boq': (context) => const BOQPage(),
-              '/mas': (context) => const MASPageFull(),
-              
-              // Procurement
-              '/samples': (context) => const SamplesPageFull(),
-              '/purchase-requests': (context) => const PurchaseRequestsPageFull(),
-              '/vendor-comparison': (context) => const VendorComparisonPageFull(),
-              '/purchase-orders': (context) => const PurchaseOrdersPageFull(),
-              '/vendors': (context) => const VendorsPageFull(),
-              
-              // Delivery & Inspection
-              '/challans': (context) => const ChallansPageFull(),
-              '/mer': (context) => const MERPageFull(),
-              '/mir': (context) => const MIRPageFull(),
-              '/itr': (context) => const ITRPageFull(),
-              
-              // Billing
-              '/billing': (context) => const BillingPageFull(),
-              
-              // Inventory
-              '/stock-areas': (context) => const StockAreasPage(),
-              '/materials': (context) => const MaterialsPage(),
-              '/stock-transfers': (context) => const StockTransfersPage(),
-              '/consumption': (context) => const ConsumptionPage(),
-              '/returns': (context) => const ReturnsPage(),
-              
-              // Documents & Analytics
-              '/documents': (context) => const DocumentsPageFull(),
-              '/reports': (context) => const ReportsPageFull(),
-              '/audit-logs': (context) => const AuditLogsPageFull(),
-              
-              // Profile
-              '/profile': (context) => const ProfilePage(),
+            onGenerateRoute: (settings) {
+              final builder = _appRoutes[settings.name];
+              if (builder != null) {
+                return PageRouteBuilder<void>(
+                  settings: settings,
+                  pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                    return FadeTransition(opacity: animation, child: child);
+                  },
+                  transitionDuration: AppAnimations.normal,
+                );
+              }
+              return null;
             },
+            routes: _appRoutes,
           );
         },
       ),

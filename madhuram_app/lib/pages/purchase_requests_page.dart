@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_redux/flutter_redux.dart';
+import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/app_theme.dart';
+import '../store/app_state.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../utils/responsive.dart';
 
 /// Purchase request model
 class PurchaseRequest {
@@ -46,7 +51,138 @@ class PurchaseRequest {
   }
 }
 
-/// Purchase Requests page matching React's PurchaseRequests page
+/// Data for one line item in the purchase request wizard
+class _PRWizardItem {
+  String materialName = '';
+  String quantity = '';
+  String unit = 'Nos';
+  String estimatedRate = '';
+  String remarks = '';
+
+  _PRWizardItem();
+}
+
+/// One editable row for Items step in PR wizard
+class _PRItemRow extends StatefulWidget {
+  final _PRWizardItem item;
+  final int index;
+  final bool canRemove;
+  final VoidCallback onRemove;
+
+  const _PRItemRow({
+    super.key,
+    required this.item,
+    required this.index,
+    required this.canRemove,
+    required this.onRemove,
+  });
+
+  @override
+  State<_PRItemRow> createState() => _PRItemRowState();
+}
+
+class _PRItemRowState extends State<_PRItemRow> {
+  late TextEditingController _materialController;
+  late TextEditingController _qtyController;
+  late TextEditingController _rateController;
+  late TextEditingController _remarksController;
+
+  @override
+  void initState() {
+    super.initState();
+    _materialController = TextEditingController(text: widget.item.materialName);
+    _qtyController = TextEditingController(text: widget.item.quantity);
+    _rateController = TextEditingController(text: widget.item.estimatedRate);
+    _remarksController = TextEditingController(text: widget.item.remarks);
+  }
+
+  @override
+  void dispose() {
+    _materialController.dispose();
+    _qtyController.dispose();
+    _rateController.dispose();
+    _remarksController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    return MadCard(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Item ${widget.index + 1}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                IconButton(
+                  icon: const Icon(LucideIcons.trash2, size: 18),
+                  onPressed: widget.canRemove ? widget.onRemove : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            MadInput(
+              labelText: 'Material Name',
+              hintText: 'Material',
+              controller: _materialController,
+              onChanged: (v) => item.materialName = v,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: MadInput(
+                    labelText: 'Quantity',
+                    hintText: '0',
+                    keyboardType: TextInputType.number,
+                    controller: _qtyController,
+                    onChanged: (v) => item.quantity = v,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: MadSelect<String>(
+                    labelText: 'Unit',
+                    placeholder: 'Unit',
+                    value: item.unit,
+                    options: const [
+                      MadSelectOption(value: 'Nos', label: 'Nos'),
+                      MadSelectOption(value: 'Bags', label: 'Bags'),
+                      MadSelectOption(value: 'Meters', label: 'Meters'),
+                      MadSelectOption(value: 'KG', label: 'KG'),
+                    ],
+                    onChanged: (v) => setState(() => item.unit = v ?? 'Nos'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            MadInput(
+              labelText: 'Estimated Rate',
+              hintText: '0.00',
+              keyboardType: TextInputType.number,
+              controller: _rateController,
+              onChanged: (v) => item.estimatedRate = v,
+            ),
+            const SizedBox(height: 12),
+            MadInput(
+              labelText: 'Remarks',
+              hintText: 'Remarks',
+              controller: _remarksController,
+              onChanged: (v) => item.remarks = v,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Purchase Requests page matching React's PurchaseRequests page.
 class PurchaseRequestsPageFull extends StatefulWidget {
   const PurchaseRequestsPageFull({super.key});
 
@@ -124,16 +260,62 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
 
   int get _totalPages => (_filteredRequests.length / _itemsPerPage).ceil();
 
+  void _approveRequest(PurchaseRequest request) {
+    setState(() {
+      final i = _requests.indexWhere((r) => r.id == request.id);
+      if (i >= 0) {
+        final r = _requests[i];
+        _requests[i] = PurchaseRequest(
+          id: r.id,
+          requestNo: r.requestNo,
+          material: r.material,
+          quantity: r.quantity,
+          unit: r.unit,
+          requestedBy: r.requestedBy,
+          date: r.date,
+          status: 'Approved',
+          priority: r.priority,
+          remarks: r.remarks,
+        );
+      }
+    });
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Request approved')));
+  }
+
+  void _rejectRequest(PurchaseRequest request) {
+    setState(() {
+      final i = _requests.indexWhere((r) => r.id == request.id);
+      if (i >= 0) {
+        final r = _requests[i];
+        _requests[i] = PurchaseRequest(
+          id: r.id,
+          requestNo: r.requestNo,
+          material: r.material,
+          quantity: r.quantity,
+          unit: r.unit,
+          requestedBy: r.requestedBy,
+          date: r.date,
+          status: 'Rejected',
+          priority: r.priority,
+          remarks: r.remarks,
+        );
+      }
+    });
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Request rejected')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 768;
+    final responsive = Responsive(context);
+    final isMobile = responsive.isMobile;
 
     return ProtectedRoute(
       title: 'Purchase Requests',
       route: '/purchase-requests',
-      child: Column(
+      child: StoreConnector<AppState, bool>(
+        converter: (store) => store.state.auth.isAdmin,
+        builder: (context, isAdmin) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
@@ -147,10 +329,11 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
                     Text(
                       'Purchase Requests',
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: responsive.value(mobile: 22, tablet: 26, desktop: 28),
                         fontWeight: FontWeight.bold,
                         color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -227,7 +410,7 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
                 ),
               ),
               SizedBox(
-                width: 150,
+                width: isMobile ? double.infinity : 150,
                 child: MadSelect<String>(
                   value: _statusFilter,
                   placeholder: 'All Status',
@@ -292,7 +475,7 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
                                   color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5),
                                 ),
                                 itemBuilder: (context, index) {
-                                  return _buildTableRow(_paginatedRequests[index], isDark, isMobile);
+                                  return _buildTableRow(_paginatedRequests[index], isDark, isMobile, isAdmin);
                                 },
                               ),
                             ),
@@ -303,6 +486,7 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
                       ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -321,7 +505,7 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
     );
   }
 
-  Widget _buildTableRow(PurchaseRequest request, bool isDark, bool isMobile) {
+  Widget _buildTableRow(PurchaseRequest request, bool isDark, bool isMobile, bool isAdmin) {
     BadgeVariant statusVariant;
     switch (request.status) {
       case 'Approved':
@@ -337,13 +521,17 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
         statusVariant = BadgeVariant.outline;
     }
 
+    // Priority badges: High = Red, Medium = Amber, Low = Blue
     BadgeVariant priorityVariant;
     switch (request.priority) {
       case 'High':
         priorityVariant = BadgeVariant.destructive;
         break;
       case 'Medium':
-        priorityVariant = BadgeVariant.secondary;
+        priorityVariant = BadgeVariant.warning;
+        break;
+      case 'Low':
+        priorityVariant = BadgeVariant.primary;
         break;
       default:
         priorityVariant = BadgeVariant.outline;
@@ -358,6 +546,7 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
             child: Text(
               request.requestNo,
               style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           Expanded(
@@ -365,7 +554,7 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(request.material, style: const TextStyle(fontWeight: FontWeight.w500)),
+                Text(request.material, style: const TextStyle(fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
                 if (isMobile)
                   Text(
                     '${request.quantity.toStringAsFixed(0)} ${request.unit}',
@@ -380,11 +569,11 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
           if (!isMobile) ...[
             Expanded(
               flex: 1,
-              child: Text('${request.quantity.toStringAsFixed(0)} ${request.unit}'),
+              child: Text('${request.quantity.toStringAsFixed(0)} ${request.unit}', overflow: TextOverflow.ellipsis),
             ),
             Expanded(
               flex: 1,
-              child: Text(request.requestedBy ?? '-'),
+              child: Text(request.requestedBy ?? '-', overflow: TextOverflow.ellipsis),
             ),
             Expanded(
               flex: 1,
@@ -401,9 +590,9 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
             items: [
               MadMenuItem(label: 'View Details', icon: LucideIcons.eye, onTap: () {}),
               MadMenuItem(label: 'Edit', icon: LucideIcons.pencil, onTap: () {}),
-              if (request.status == 'Pending') ...[
-                MadMenuItem(label: 'Approve', icon: LucideIcons.circleCheck, onTap: () {}),
-                MadMenuItem(label: 'Reject', icon: LucideIcons.circleX, destructive: true, onTap: () {}),
+              if (isAdmin && request.status == 'Pending') ...[
+                MadMenuItem(label: 'Approve', icon: LucideIcons.circleCheck, onTap: () => _approveRequest(request)),
+                MadMenuItem(label: 'Reject', icon: LucideIcons.circleX, destructive: true, onTap: () => _rejectRequest(request)),
               ],
               MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () {}),
             ],
@@ -508,77 +697,333 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
     MadFormDialog.show(
       context: context,
       title: 'New Purchase Request',
-      maxWidth: 500,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+      maxWidth: 640,
+      content: _PurchaseRequestWizardContent(
+        onSubmitted: (newRequests) {
+          Navigator.of(context).pop();
+          setState(() => _requests.insertAll(0, newRequests));
+          _loadRequests();
+        },
+        onSaveDraft: () {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Draft saved')));
+        },
+        onCancel: () => Navigator.of(context).pop(),
+      ),
+      actions: const [],
+    );
+  }
+}
+
+/// 3-step wizard content for New Purchase Request
+class _PurchaseRequestWizardContent extends StatefulWidget {
+  final void Function(List<PurchaseRequest> newRequests) onSubmitted;
+  final VoidCallback onSaveDraft;
+  final VoidCallback onCancel;
+
+  const _PurchaseRequestWizardContent({
+    required this.onSubmitted,
+    required this.onSaveDraft,
+    required this.onCancel,
+  });
+
+  @override
+  State<_PurchaseRequestWizardContent> createState() => _PurchaseRequestWizardContentState();
+}
+
+class _PurchaseRequestWizardContentState extends State<_PurchaseRequestWizardContent> {
+  int _step = 0;
+  final _prNumberController = TextEditingController(text: 'PR-${DateTime.now().millisecondsSinceEpoch % 100000}');
+  String? _priority;
+  final _requestedByController = TextEditingController();
+  final _dateController = TextEditingController();
+  final _departmentController = TextEditingController();
+  final List<_PRWizardItem> _items = [_PRWizardItem()];
+  final _generalRemarksController = TextEditingController();
+  String? _bulkFileName;
+
+  @override
+  void dispose() {
+    _prNumberController.dispose();
+    _requestedByController.dispose();
+    _dateController.dispose();
+    _departmentController.dispose();
+    _generalRemarksController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2030),
+    );
+    if (date != null) _dateController.text = DateFormat('yyyy-MM-dd').format(date);
+  }
+
+  Future<void> _pickBulkFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx', 'xls', 'pdf'],
+    );
+    if (result != null && result.files.single.name.isNotEmpty) {
+      setState(() => _bulkFileName = result.files.single.name);
+    }
+  }
+
+  Widget _buildStepIndicator() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      children: [
+        _stepChip(0, 'Basic Info', isDark),
+        const SizedBox(width: 8),
+        _stepChip(1, 'Items', isDark),
+        const SizedBox(width: 8),
+        _stepChip(2, 'Review', isDark),
+      ],
+    );
+  }
+
+  Widget _stepChip(int step, String label, bool isDark) {
+    final active = _step == step;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? AppTheme.primaryColor : (isDark ? AppTheme.darkMuted : AppTheme.lightMuted),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+          color: active ? Colors.white : (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStep1() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MadInput(
+          controller: _prNumberController,
+          labelText: 'PR Number',
+          hintText: 'Auto-generated or enter manually',
+        ),
+        const SizedBox(height: 16),
+        MadSelect<String>(
+          labelText: 'Priority',
+          value: _priority,
+          placeholder: 'Select priority',
+          options: const [
+            MadSelectOption(value: 'High', label: 'High'),
+            MadSelectOption(value: 'Medium', label: 'Medium'),
+            MadSelectOption(value: 'Low', label: 'Low'),
+          ],
+          onChanged: (v) => setState(() => _priority = v),
+        ),
+        const SizedBox(height: 16),
+        MadInput(
+          controller: _requestedByController,
+          labelText: 'Requested By',
+          hintText: 'Name',
+        ),
+        const SizedBox(height: 16),
+        GestureDetector(
+          onTap: _pickDate,
+          child: AbsorbPointer(
+            child: MadInput(
+              controller: _dateController,
+              labelText: 'Date',
+              hintText: 'Select date',
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        MadInput(
+          controller: _departmentController,
+          labelText: 'Department',
+          hintText: 'Department',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep2() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        OutlinedButton.icon(
+          onPressed: _pickBulkFile,
+          icon: const Icon(LucideIcons.upload, size: 18),
+          label: Text(_bulkFileName ?? 'Upload file (Excel/PDF) for bulk items'),
+        ),
+        if (_bulkFileName != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text('Selected: $_bulkFileName', style: TextStyle(fontSize: 12, color: AppTheme.primaryColor)),
+          ),
+        const SizedBox(height: 20),
+        ...List.generate(_items.length, (i) {
+          final item = _items[i];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: _PRItemRow(
+              key: ObjectKey(item),
+              item: item,
+              index: i,
+              canRemove: _items.length > 1,
+              onRemove: () => setState(() => _items.removeAt(i)),
+            ),
+          );
+        }),
+        MadButton(
+          text: 'Add Item',
+          icon: LucideIcons.plus,
+          variant: ButtonVariant.outline,
+          onPressed: () => setState(() => _items.add(_PRWizardItem())),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep3() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MadCard(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Summary', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
+                const SizedBox(height: 12),
+                _summaryRow('PR Number', _prNumberController.text),
+                _summaryRow('Priority', _priority ?? '-'),
+                _summaryRow('Requested By', _requestedByController.text),
+                _summaryRow('Date', _dateController.text),
+                _summaryRow('Department', _departmentController.text),
+                const SizedBox(height: 12),
+                const Text('Items', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                ..._items.asMap().entries.map((e) {
+                  final i = e.key + 1;
+                  final item = e.value;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text('$i. ${item.materialName.isNotEmpty ? item.materialName : "(No name)"} - ${item.quantity} ${item.unit}${item.estimatedRate.isNotEmpty ? " @ ${item.estimatedRate}" : ""}'),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        MadTextarea(
+          controller: _generalRemarksController,
+          labelText: 'General Remarks',
+          hintText: 'Additional notes...',
+          minLines: 3,
+        ),
+      ],
+    );
+  }
+
+  Widget _summaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          MadSelect<String>(
-            labelText: 'Material',
-            placeholder: 'Select material',
-            searchable: true,
-            options: const [
-              MadSelectOption(value: 'cement', label: 'Cement OPC 53'),
-              MadSelectOption(value: 'pvc', label: 'PVC Pipe 4"'),
-              MadSelectOption(value: 'steel', label: 'Steel Rods 12mm'),
-            ],
-            onChanged: (value) {},
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: MadInput(
-                  labelText: 'Quantity',
-                  hintText: 'Enter quantity',
-                  keyboardType: TextInputType.number,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: MadSelect<String>(
-                  labelText: 'Unit',
-                  placeholder: 'Select',
-                  options: const [
-                    MadSelectOption(value: 'bags', label: 'Bags'),
-                    MadSelectOption(value: 'meters', label: 'Meters'),
-                    MadSelectOption(value: 'kg', label: 'KG'),
-                  ],
-                  onChanged: (value) {},
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          MadSelect<String>(
-            labelText: 'Priority',
-            placeholder: 'Select priority',
-            options: const [
-              MadSelectOption(value: 'High', label: 'High'),
-              MadSelectOption(value: 'Medium', label: 'Medium'),
-              MadSelectOption(value: 'Low', label: 'Low'),
-            ],
-            onChanged: (value) {},
-          ),
-          const SizedBox(height: 16),
-          MadTextarea(
-            labelText: 'Remarks',
-            hintText: 'Additional notes...',
-            minLines: 2,
-          ),
+          SizedBox(width: 120, child: Text(label, style: const TextStyle(fontWeight: FontWeight.w500))),
+          Expanded(child: Text(value.isEmpty ? '-' : value)),
         ],
       ),
-      actions: [
-        MadButton(
-          text: 'Cancel',
-          variant: ButtonVariant.outline,
-          onPressed: () => Navigator.pop(context),
+    );
+  }
+
+  void _submit() {
+    final prNo = _prNumberController.text.trim().isEmpty ? 'PR-${DateTime.now().millisecondsSinceEpoch % 100000}' : _prNumberController.text.trim();
+    final baseId = 'pr-${DateTime.now().millisecondsSinceEpoch}';
+    final newRequests = <PurchaseRequest>[];
+    for (var i = 0; i < _items.length; i++) {
+      final item = _items[i];
+      final mat = item.materialName.trim().isEmpty ? 'Item ${i + 1}' : item.materialName;
+      final qty = (double.tryParse(item.quantity) ?? 0);
+      newRequests.add(PurchaseRequest(
+        id: '$baseId-$i',
+        requestNo: prNo,
+        material: mat,
+        quantity: qty,
+        unit: item.unit,
+        requestedBy: _requestedByController.text.trim().isEmpty ? null : _requestedByController.text.trim(),
+        date: _dateController.text.trim().isEmpty ? null : _dateController.text.trim(),
+        status: 'Pending',
+        priority: _priority,
+        remarks: _generalRemarksController.text.trim().isEmpty ? null : _generalRemarksController.text.trim(),
+      ));
+    }
+    if (newRequests.isEmpty) {
+      newRequests.add(PurchaseRequest(
+        id: baseId,
+        requestNo: prNo,
+        material: 'Draft',
+        quantity: 0,
+        unit: 'Nos',
+        requestedBy: _requestedByController.text.trim().isEmpty ? null : _requestedByController.text.trim(),
+        date: _dateController.text.trim().isEmpty ? null : _dateController.text.trim(),
+        status: 'Draft',
+        priority: _priority,
+        remarks: _generalRemarksController.text.trim().isEmpty ? null : _generalRemarksController.text.trim(),
+      ));
+    }
+    widget.onSubmitted(newRequests);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildStepIndicator(),
+        const SizedBox(height: 24),
+        Flexible(
+          child: SingleChildScrollView(
+            child: _step == 0 ? _buildStep1() : _step == 1 ? _buildStep2() : _buildStep3(),
+          ),
         ),
-        MadButton(
-          text: 'Submit Request',
-          onPressed: () {
-            Navigator.pop(context);
-            _loadRequests();
-          },
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            MadButton(text: 'Cancel', variant: ButtonVariant.outline, onPressed: widget.onCancel),
+            const SizedBox(width: 12),
+            if (_step > 0)
+              MadButton(
+                text: 'Back',
+                variant: ButtonVariant.outline,
+                onPressed: () => setState(() => _step--),
+              ),
+            if (_step > 0) const SizedBox(width: 12),
+            if (_step == 2) ...[
+              MadButton(text: 'Save Draft', variant: ButtonVariant.secondary, onPressed: widget.onSaveDraft),
+              const SizedBox(width: 12),
+              MadButton(text: 'Submit', onPressed: _submit),
+            ] else
+              MadButton(
+                text: _step == 0 ? 'Next' : 'Next',
+                onPressed: () => setState(() => _step++),
+              ),
+          ],
         ),
       ],
     );

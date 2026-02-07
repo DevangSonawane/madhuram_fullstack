@@ -3,33 +3,28 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/app_theme.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../utils/responsive.dart';
 
-/// Vendor quote for comparison
-class VendorQuote {
-  final String vendorId;
-  final String vendorName;
-  final String material;
-  final double rate;
+/// Single cell data for vendor-product matrix
+class VendorProductCell {
+  final double unitPrice;
   final double quantity;
-  final String? delivery;
-  final String? paymentTerms;
-  final double? rating;
+  final int deliveryDays;
+  final String paymentTerms;
+  final String warranty;
 
-  const VendorQuote({
-    required this.vendorId,
-    required this.vendorName,
-    required this.material,
-    required this.rate,
-    required this.quantity,
-    this.delivery,
-    this.paymentTerms,
-    this.rating,
+  const VendorProductCell({
+    required this.unitPrice,
+    this.quantity = 1,
+    required this.deliveryDays,
+    required this.paymentTerms,
+    required this.warranty,
   });
 
-  double get totalAmount => rate * quantity;
+  double get totalCost => unitPrice * quantity;
 }
 
-/// Vendor Comparison page matching React's VendorComparison page
+/// Vendor Comparison page - full matrix with multi-vendor product entry
 class VendorComparisonPageFull extends StatefulWidget {
   const VendorComparisonPageFull({super.key});
 
@@ -38,64 +33,118 @@ class VendorComparisonPageFull extends StatefulWidget {
 }
 
 class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
-  bool _isLoading = false;
-  String? _selectedMaterial;
-  List<VendorQuote> _quotes = [];
+  List<String> _vendors = ['Astral Pipes', 'Supreme Pipes', 'Ashirvad Pipes'];
+  List<String> _products = ['CPVC Pipe 20mm', 'Ball Valve 1"', 'PVC Pipe 4"'];
 
-  final List<String> _materials = [
-    'Cement OPC 53',
-    'PVC Pipe 4"',
-    'Steel Rods 12mm',
-    'River Sand',
-    'Aggregate 20mm',
-  ];
+  /// [productIndex][vendorIndex] -> cell
+  late List<List<VendorProductCell>> _matrix;
 
   @override
   void initState() {
     super.initState();
+    _initMockMatrix();
   }
 
-  Future<void> _loadQuotes(String material) async {
-    setState(() => _isLoading = true);
-    
-    await Future.delayed(const Duration(milliseconds: 500));
-    
-    if (!mounted) return;
-    
+  void _initMockMatrix() {
+    // Mock data: Vendors x Products
+    // Row = product, Col = vendor
+    _matrix = [
+      // CPVC Pipe 20mm -> Astral, Supreme, Ashirvad
+      [
+        const VendorProductCell(unitPrice: 45, deliveryDays: 5, paymentTerms: '30 days', warranty: '2 years'),
+        const VendorProductCell(unitPrice: 42, deliveryDays: 7, paymentTerms: '45 days', warranty: '2 years'),
+        const VendorProductCell(unitPrice: 48, deliveryDays: 3, paymentTerms: '15 days', warranty: '2 years'),
+      ],
+      // Ball Valve 1"
+      [
+        const VendorProductCell(unitPrice: 120, deliveryDays: 3, paymentTerms: '15 days', warranty: '1 year'),
+        const VendorProductCell(unitPrice: 115, deliveryDays: 5, paymentTerms: '30 days', warranty: '1 year'),
+        const VendorProductCell(unitPrice: 125, deliveryDays: 4, paymentTerms: '30 days', warranty: '2 years'),
+      ],
+      // PVC Pipe 4"
+      [
+        const VendorProductCell(unitPrice: 85, deliveryDays: 7, paymentTerms: '30 days', warranty: '2 years'),
+        const VendorProductCell(unitPrice: 90, deliveryDays: 5, paymentTerms: '15 days', warranty: '2 years'),
+        const VendorProductCell(unitPrice: 82, deliveryDays: 6, paymentTerms: '45 days', warranty: '2 years'),
+      ],
+    ];
+  }
+
+  void _addVendor() {
     setState(() {
-      _quotes = [
-        VendorQuote(vendorId: '1', vendorName: 'ABC Suppliers', material: material, rate: 350, quantity: 500, delivery: '3 days', paymentTerms: '30 days', rating: 4.5),
-        VendorQuote(vendorId: '2', vendorName: 'XYZ Traders', material: material, rate: 340, quantity: 500, delivery: '5 days', paymentTerms: '15 days', rating: 4.2),
-        VendorQuote(vendorId: '3', vendorName: 'PQR Industries', material: material, rate: 360, quantity: 500, delivery: '2 days', paymentTerms: '45 days', rating: 4.8),
-      ];
-      _isLoading = false;
+      _vendors.add('New Vendor ${_vendors.length + 1}');
+      for (var i = 0; i < _matrix.length; i++) {
+        _matrix[i].add(const VendorProductCell(
+          unitPrice: 0,
+          deliveryDays: 0,
+          paymentTerms: '-',
+          warranty: '-',
+        ));
+      }
     });
   }
 
-  VendorQuote? get _lowestQuote {
-    if (_quotes.isEmpty) return null;
-    return _quotes.reduce((a, b) => a.rate < b.rate ? a : b);
-  }
-
-  VendorQuote? get _fastestDelivery {
-    if (_quotes.isEmpty) return null;
-    return _quotes.reduce((a, b) {
-      final aDelivery = int.tryParse(a.delivery?.split(' ').first ?? '999') ?? 999;
-      final bDelivery = int.tryParse(b.delivery?.split(' ').first ?? '999') ?? 999;
-      return aDelivery < bDelivery ? a : b;
+  void _addProduct() {
+    setState(() {
+      _products.add('New Product ${_products.length + 1}');
+      _matrix.add(
+        List.generate(_vendors.length, (_) => const VendorProductCell(
+          unitPrice: 0,
+          deliveryDays: 0,
+          paymentTerms: '-',
+          warranty: '-',
+        )),
+      );
     });
   }
 
-  VendorQuote? get _highestRated {
-    if (_quotes.isEmpty) return null;
-    return _quotes.reduce((a, b) => (a.rating ?? 0) > (b.rating ?? 0) ? a : b);
+  /// Best vendor index for lowest total cost across products (overall recommendation)
+  int get _recommendedVendorIndex {
+    if (_vendors.isEmpty || _products.isEmpty) return 0;
+    var bestIdx = 0;
+    var bestTotal = double.infinity;
+    for (var v = 0; v < _vendors.length; v++) {
+      var total = 0.0;
+      for (var p = 0; p < _products.length; p++) {
+        if (p < _matrix.length && v < _matrix[p].length) {
+          total += _matrix[p][v].totalCost;
+        }
+      }
+      if (total < bestTotal) {
+        bestTotal = total;
+        bestIdx = v;
+      }
+    }
+    return bestIdx;
+  }
+
+  /// For each product row, which vendor has lowest price
+  int? _bestVendorForPrice(int productIndex) {
+    if (productIndex >= _matrix.length || _matrix[productIndex].isEmpty) return null;
+    final row = _matrix[productIndex];
+    var best = 0;
+    for (var v = 1; v < row.length; v++) {
+      if (row[v].unitPrice < row[best].unitPrice) best = v;
+    }
+    return best;
+  }
+
+  /// For each product row, which vendor has fastest delivery
+  int? _bestVendorForDelivery(int productIndex) {
+    if (productIndex >= _matrix.length || _matrix[productIndex].isEmpty) return null;
+    final row = _matrix[productIndex];
+    var best = 0;
+    for (var v = 1; v < row.length; v++) {
+      if (row[v].deliveryDays < row[best].deliveryDays) best = v;
+    }
+    return best;
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 768;
+    final responsive = Responsive(context);
+    final isMobile = responsive.isMobile;
 
     return ProtectedRoute(
       title: 'Vendor Comparison',
@@ -103,7 +152,6 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -114,7 +162,7 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
                     Text(
                       'Vendor Comparison',
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: responsive.value(mobile: 22, tablet: 26, desktop: 28),
                         fontWeight: FontWeight.bold,
                         color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
                       ),
@@ -130,267 +178,106 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
                 ),
               ),
               if (!isMobile)
-                MadButton(
-                  text: 'Add Quotation',
-                  icon: LucideIcons.plus,
-                  onPressed: () => _showAddQuoteDialog(),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    MadButton(
+                      icon: LucideIcons.fileDown,
+                      text: 'Export PDF',
+                      variant: ButtonVariant.outline,
+                      size: ButtonSize.sm,
+                      onPressed: () => showToast(context, 'Export to PDF – placeholder'),
+                    ),
+                    const SizedBox(width: 8),
+                    MadButton(
+                      icon: LucideIcons.fileSpreadsheet,
+                      text: 'Export Excel',
+                      variant: ButtonVariant.outline,
+                      size: ButtonSize.sm,
+                      onPressed: () => showToast(context, 'Export to Excel – placeholder'),
+                    ),
+                    const SizedBox(width: 8),
+                    MadButton(
+                      icon: LucideIcons.send,
+                      text: 'Request New Quotes',
+                      variant: ButtonVariant.outline,
+                      size: ButtonSize.sm,
+                      onPressed: () => showToast(context, 'Request new quotes – placeholder'),
+                    ),
+                  ],
                 ),
             ],
           ),
           const SizedBox(height: 24),
 
-          // Material selector
+          // Add Vendor / Add Product
           Row(
             children: [
-              SizedBox(
-                width: isMobile ? double.infinity : 300,
-                child: MadSelect<String>(
-                  value: _selectedMaterial,
-                  labelText: 'Select Material',
-                  placeholder: 'Choose a material to compare',
-                  options: _materials.map((m) => MadSelectOption(value: m, label: m)).toList(),
-                  onChanged: (value) {
-                    setState(() => _selectedMaterial = value);
-                    if (value != null) _loadQuotes(value);
-                  },
-                ),
+              MadButton(
+                icon: LucideIcons.plus,
+                text: 'Add Vendor',
+                variant: ButtonVariant.outline,
+                size: ButtonSize.sm,
+                onPressed: _addVendor,
+              ),
+              const SizedBox(width: 12),
+              MadButton(
+                icon: LucideIcons.plus,
+                text: 'Add Product',
+                variant: ButtonVariant.outline,
+                size: ButtonSize.sm,
+                onPressed: _addProduct,
               ),
               if (isMobile) ...[
                 const SizedBox(width: 12),
                 MadButton(
-                  icon: LucideIcons.plus,
+                  icon: LucideIcons.fileDown,
                   size: ButtonSize.icon,
-                  onPressed: () => _showAddQuoteDialog(),
+                  variant: ButtonVariant.outline,
+                  onPressed: () => showToast(context, 'Export PDF – placeholder'),
+                ),
+                MadButton(
+                  icon: LucideIcons.fileSpreadsheet,
+                  size: ButtonSize.icon,
+                  variant: ButtonVariant.outline,
+                  onPressed: () => showToast(context, 'Export to Excel – placeholder'),
+                ),
+                MadButton(
+                  icon: LucideIcons.send,
+                  size: ButtonSize.icon,
+                  variant: ButtonVariant.outline,
+                  onPressed: () => showToast(context, 'Request new quotes – placeholder'),
                 ),
               ],
             ],
           ),
           const SizedBox(height: 24),
 
-          // Content
+          // Recommendation card
+          if (_vendors.isNotEmpty && _recommendedVendorIndex < _vendors.length) ...[
+            _buildRecommendationCard(
+              isDark,
+              _vendors[_recommendedVendorIndex],
+              'Based on overall lowest total cost',
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // Matrix + comparison table
           Expanded(
-            child: _selectedMaterial == null
-                ? _buildSelectMaterialState(isDark)
-                : _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _quotes.isEmpty
-                        ? _buildEmptyState(isDark)
-                        : _buildComparisonView(isDark, isMobile),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SingleChildScrollView(
+                child: _buildComparisonTable(isDark, isMobile),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSelectMaterialState(bool isDark) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(48),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              LucideIcons.scale,
-              size: 64,
-              color: (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground).withOpacity(0.3),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Select a Material',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Choose a material to compare vendor quotations',
-              style: TextStyle(
-                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(bool isDark) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(48),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              LucideIcons.fileSearch,
-              size: 64,
-              color: (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground).withOpacity(0.3),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'No quotations found',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Add vendor quotations to compare',
-              style: TextStyle(
-                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-              ),
-            ),
-            const SizedBox(height: 24),
-            MadButton(
-              text: 'Add Quotation',
-              icon: LucideIcons.plus,
-              onPressed: () => _showAddQuoteDialog(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildComparisonView(bool isDark, bool isMobile) {
-    return Column(
-      children: [
-        // Summary cards
-        if (!isMobile)
-          Row(
-            children: [
-              Expanded(
-                child: _buildRecommendationCard(
-                  'Lowest Price',
-                  _lowestQuote?.vendorName ?? '-',
-                  '₹${_lowestQuote?.rate.toStringAsFixed(2) ?? '0'}',
-                  LucideIcons.indianRupee,
-                  const Color(0xFF22C55E),
-                  isDark,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildRecommendationCard(
-                  'Fastest Delivery',
-                  _fastestDelivery?.vendorName ?? '-',
-                  _fastestDelivery?.delivery ?? '-',
-                  LucideIcons.truck,
-                  AppTheme.primaryColor,
-                  isDark,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildRecommendationCard(
-                  'Highest Rated',
-                  _highestRated?.vendorName ?? '-',
-                  '${_highestRated?.rating ?? 0} ★',
-                  LucideIcons.star,
-                  const Color(0xFFF59E0B),
-                  isDark,
-                ),
-              ),
-            ],
-          ),
-        if (!isMobile) const SizedBox(height: 24),
-
-        // Comparison table
-        Expanded(
-          child: MadCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    'Quotation Comparison',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
-                    ),
-                  ),
-                ),
-                Divider(height: 1, color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: DataTable(
-                      columnSpacing: 40,
-                      columns: const [
-                        DataColumn(label: Text('Vendor')),
-                        DataColumn(label: Text('Rate/Unit'), numeric: true),
-                        DataColumn(label: Text('Quantity'), numeric: true),
-                        DataColumn(label: Text('Total'), numeric: true),
-                        DataColumn(label: Text('Delivery')),
-                        DataColumn(label: Text('Payment')),
-                        DataColumn(label: Text('Rating'), numeric: true),
-                        DataColumn(label: Text('Actions')),
-                      ],
-                      rows: _quotes.map((quote) {
-                        final isLowest = quote.vendorId == _lowestQuote?.vendorId;
-                        return DataRow(
-                          color: isLowest ? WidgetStateProperty.all(
-                            const Color(0xFF22C55E).withOpacity(0.1),
-                          ) : null,
-                          cells: [
-                            DataCell(
-                              Row(
-                                children: [
-                                  Text(
-                                    quote.vendorName,
-                                    style: const TextStyle(fontWeight: FontWeight.w500),
-                                  ),
-                                  if (isLowest) ...[
-                                    const SizedBox(width: 8),
-                                    MadBadge(text: 'Best Price', variant: BadgeVariant.default_),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            DataCell(Text('₹${quote.rate.toStringAsFixed(2)}')),
-                            DataCell(Text(quote.quantity.toStringAsFixed(0))),
-                            DataCell(Text(
-                              '₹${quote.totalAmount.toStringAsFixed(2)}',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            )),
-                            DataCell(Text(quote.delivery ?? '-')),
-                            DataCell(Text(quote.paymentTerms ?? '-')),
-                            DataCell(Row(
-                              children: [
-                                const Icon(LucideIcons.star, size: 14, color: Color(0xFFF59E0B)),
-                                const SizedBox(width: 4),
-                                Text(quote.rating?.toStringAsFixed(1) ?? '-'),
-                              ],
-                            )),
-                            DataCell(
-                              MadButton(
-                                text: 'Select',
-                                variant: ButtonVariant.outline,
-                                size: ButtonSize.sm,
-                                onPressed: () => _selectVendor(quote),
-                              ),
-                            ),
-                          ],
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRecommendationCard(String title, String vendor, String value, IconData icon, Color color, bool isDark) {
+  Widget _buildRecommendationCard(bool isDark, String vendorName, String subtitle) {
     return MadCard(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -400,10 +287,10 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: AppTheme.primaryColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: color),
+              child: const Icon(LucideIcons.award, color: AppTheme.primaryColor),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -411,23 +298,22 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
+                    'Recommended Vendor',
                     style: TextStyle(
                       fontSize: 13,
                       color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
                     ),
                   ),
+                          Text(
+                            vendorName,
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                   Text(
-                    vendor,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    value,
+                    subtitle,
                     style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: color,
+                      fontSize: 12,
+                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
                     ),
                   ),
                 ],
@@ -439,101 +325,198 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
     );
   }
 
-  void _selectVendor(VendorQuote quote) {
-    MadDialog.confirm(
-      context: context,
-      title: 'Create Purchase Order?',
-      description: 'Do you want to create a purchase order with ${quote.vendorName} for ${quote.material}?',
-      confirmText: 'Create PO',
-    ).then((confirmed) {
-      if (confirmed) {
-        Navigator.pushNamed(context, '/purchase-orders');
-      }
-    });
-  }
+  Widget _buildComparisonTable(bool isDark, bool isMobile) {
+    if (_vendors.isEmpty || _products.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(48),
+        child: Text(
+          'Add vendors and products to compare.',
+          style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+        ),
+      );
+    }
 
-  void _showAddQuoteDialog() {
-    MadFormDialog.show(
-      context: context,
-      title: 'Add Vendor Quotation',
-      maxWidth: 500,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+    const cellWidth = 140.0;
+    const productColWidth = 160.0;
+
+    return MadCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          MadSelect<String>(
-            labelText: 'Vendor',
-            placeholder: 'Select vendor',
-            searchable: true,
-            options: const [
-              MadSelectOption(value: 'abc', label: 'ABC Suppliers'),
-              MadSelectOption(value: 'xyz', label: 'XYZ Traders'),
-              MadSelectOption(value: 'pqr', label: 'PQR Industries'),
-            ],
-            onChanged: (value) {},
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Text(
+              'Comparison Matrix',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              ),
+            ),
           ),
-          const SizedBox(height: 16),
-          MadSelect<String>(
-            labelText: 'Material',
-            placeholder: 'Select material',
-            options: _materials.map((m) => MadSelectOption(value: m, label: m)).toList(),
-            onChanged: (value) {},
-          ),
-          const SizedBox(height: 16),
-          Row(
+          Divider(height: 1, color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
+          Table(
+            border: TableBorder(
+              horizontalInside: BorderSide(color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
+              verticalInside: BorderSide(color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
+            ),
+            columnWidths: {
+              0: const FixedColumnWidth(productColWidth),
+              ...Map.fromIterables(
+                List.generate(_vendors.length, (i) => i + 1),
+                List.generate(_vendors.length, (_) => const FixedColumnWidth(cellWidth * 1.2)),
+              ),
+            },
             children: [
-              Expanded(
-                child: MadInput(
-                  labelText: 'Rate per Unit',
-                  hintText: '0.00',
-                  keyboardType: TextInputType.number,
+              // Header row: Product | Vendor1 | Vendor2 | ...
+              TableRow(
+                decoration: BoxDecoration(
+                  color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.5),
                 ),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    child: Text(
+                      'Product',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                      ),
+                    ),
+                  ),
+                  ...List.generate(_vendors.length, (v) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _vendors[v],
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Unit Price · Total · Delivery · Terms · Warranty',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: MadInput(
-                  labelText: 'Quantity',
-                  hintText: '0',
-                  keyboardType: TextInputType.number,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: MadInput(
-                  labelText: 'Delivery Time',
-                  hintText: 'e.g. 3 days',
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: MadInput(
-                  labelText: 'Payment Terms',
-                  hintText: 'e.g. 30 days',
-                ),
-              ),
+              // Data rows
+              ...List.generate(_products.length, (p) {
+                final row = p < _matrix.length ? _matrix[p] : <VendorProductCell>[];
+                final bestPrice = _bestVendorForPrice(p);
+                final bestDelivery = _bestVendorForDelivery(p);
+                return TableRow(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      child: Text(
+                        _products[p],
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                        ),
+                      ),
+                    ),
+                    ...List.generate(_vendors.length, (v) {
+                      final cell = v < row.length ? row[v] : const VendorProductCell(
+                        unitPrice: 0,
+                        deliveryDays: 0,
+                        paymentTerms: '-',
+                        warranty: '-',
+                      );
+                      final isBestPrice = bestPrice == v && _vendors.length > 1;
+                      final isBestDelivery = bestDelivery == v && _vendors.length > 1;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '₹${cell.unitPrice.toStringAsFixed(0)}',
+                                  style: TextStyle(
+                                    fontWeight: isBestPrice ? FontWeight.bold : FontWeight.w500,
+                                    color: isBestPrice ? const Color(0xFF22C55E) : (isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+                                  ),
+                                ),
+                                if (isBestPrice) ...[
+                                  const SizedBox(width: 4),
+                                  MadBadge(text: 'Best', variant: BadgeVariant.success),
+                                ],
+                              ],
+                            ),
+                            Text(
+                              'Total: ₹${cell.totalCost.toStringAsFixed(0)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                              ),
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${cell.deliveryDays} days',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: isBestDelivery ? FontWeight.w600 : FontWeight.normal,
+                                    color: isBestDelivery ? AppTheme.primaryColor : (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+                                  ),
+                                ),
+                                if (isBestDelivery) ...[
+                                  const SizedBox(width: 4),
+                                  MadBadge(text: 'Fast', variant: BadgeVariant.default_),
+                                ],
+                              ],
+                            ),
+                            Text(
+                              cell.paymentTerms,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                              ),
+                            ),
+                            Text(
+                              cell.warranty,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            MadButton(
+                              text: 'Select Vendor',
+                              variant: ButtonVariant.outline,
+                              size: ButtonSize.sm,
+                              onPressed: () => showToast(context, 'Select vendor ${_vendors[v]} – creates PO (placeholder)'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                );
+              }),
             ],
           ),
         ],
       ),
-      actions: [
-        MadButton(
-          text: 'Cancel',
-          variant: ButtonVariant.outline,
-          onPressed: () => Navigator.pop(context),
-        ),
-        MadButton(
-          text: 'Add Quotation',
-          onPressed: () {
-            Navigator.pop(context);
-            if (_selectedMaterial != null) {
-              _loadQuotes(_selectedMaterial!);
-            }
-          },
-        ),
-      ],
     );
   }
 }

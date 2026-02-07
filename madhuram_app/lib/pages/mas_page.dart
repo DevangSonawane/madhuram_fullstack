@@ -3,26 +3,50 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/app_theme.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../utils/responsive.dart';
 
-/// Material Abstract Statement model
+/// Material Approval Sheet item (client approval workflow)
 class MASItem {
   final String id;
   final String itemCode;
-  final String description;
-  final String category;
-  final String unit;
-  final double boqQty;
-  final double orderedQty;
-  final double receivedQty;
-  final double consumedQty;
-  final double balanceQty;
+  final String itemName;
+  final String proposedBrand;
+  final String modelSpec;
+  final String status; // Approved, Pending, Rejected
+  final String clientRemarks;
 
-  const MASItem({required this.id, required this.itemCode, required this.description, required this.category, required this.unit, required this.boqQty, required this.orderedQty, required this.receivedQty, required this.consumedQty, required this.balanceQty});
+  const MASItem({
+    required this.id,
+    required this.itemCode,
+    required this.itemName,
+    required this.proposedBrand,
+    required this.modelSpec,
+    required this.status,
+    this.clientRemarks = '',
+  });
 
-  double get percentage => boqQty > 0 ? (consumedQty / boqQty * 100) : 0;
+  MASItem copyWith({
+    String? id,
+    String? itemCode,
+    String? itemName,
+    String? proposedBrand,
+    String? modelSpec,
+    String? status,
+    String? clientRemarks,
+  }) {
+    return MASItem(
+      id: id ?? this.id,
+      itemCode: itemCode ?? this.itemCode,
+      itemName: itemName ?? this.itemName,
+      proposedBrand: proposedBrand ?? this.proposedBrand,
+      modelSpec: modelSpec ?? this.modelSpec,
+      status: status ?? this.status,
+      clientRemarks: clientRemarks ?? this.clientRemarks,
+    );
+  }
 }
 
-/// Material Abstract Statement page
+/// Material Approval Sheet page - client approval workflow (matches React MAS.jsx)
 class MASPageFull extends StatefulWidget {
   const MASPageFull({super.key});
   @override
@@ -30,152 +54,470 @@ class MASPageFull extends StatefulWidget {
 }
 
 class _MASPageFullState extends State<MASPageFull> {
-  bool _isLoading = false;
-  List<MASItem> _items = [];
-  String _searchQuery = '';
-  String? _categoryFilter;
-  final _searchController = TextEditingController();
+  static const List<MASItem> _mockData = [
+    MASItem(id: '1', itemCode: 'CPVC-001', itemName: 'CPVC Pipe', proposedBrand: 'Astral', modelSpec: '20mm SDR-11', status: 'Approved', clientRemarks: 'Approved as per specs'),
+    MASItem(id: '2', itemCode: 'BV-001', itemName: 'Ball Valve', proposedBrand: 'Zoloto', modelSpec: '1 inch Brass', status: 'Pending', clientRemarks: ''),
+    MASItem(id: '3', itemCode: 'WC-001', itemName: 'Western Closet', proposedBrand: 'Kohler', modelSpec: 'S-Trap 100mm', status: 'Pending', clientRemarks: ''),
+    MASItem(id: '4', itemCode: 'CW-001', itemName: 'Copper Wire', proposedBrand: 'Polycab', modelSpec: '2.5 sq.mm FR', status: 'Rejected', clientRemarks: 'Use Havells instead'),
+  ];
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
-    });
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-    setState(() {
-      _items = [
-        MASItem(id: '1', itemCode: 'C-101', description: 'Cement OPC 53', category: 'Civil', unit: 'Bags', boqQty: 1000, orderedQty: 800, receivedQty: 750, consumedQty: 600, balanceQty: 150),
-        MASItem(id: '2', itemCode: 'P-201', description: 'PVC Pipe 4"', category: 'Plumbing', unit: 'Meters', boqQty: 500, orderedQty: 400, receivedQty: 380, consumedQty: 350, balanceQty: 30),
-        MASItem(id: '3', itemCode: 'S-301', description: 'Steel Rods 12mm', category: 'Civil', unit: 'KG', boqQty: 5000, orderedQty: 4500, receivedQty: 4500, consumedQty: 4200, balanceQty: 300),
-      ];
-      _isLoading = false;
-    });
-  }
+  final List<MASItem> _items = List.from(_mockData);
+  String _selectedProject = 'p1';
+  String _statusTab = 'all';
+  final List<MadSelectOption<String>> _projectOptions = const [
+    MadSelectOption(value: 'p1', label: 'Lodha World One Tower'),
+    MadSelectOption(value: 'p2', label: 'Hiranandani Gardens'),
+  ];
 
   List<MASItem> get _filteredItems {
-    List<MASItem> result = _items;
-    if (_searchQuery.isNotEmpty) {
-      final query = _searchQuery.toLowerCase();
-      result = result.where((i) => i.itemCode.toLowerCase().contains(query) || i.description.toLowerCase().contains(query)).toList();
-    }
-    if (_categoryFilter != null) result = result.where((i) => i.category == _categoryFilter).toList();
-    return result;
+    if (_statusTab == 'all') return _items;
+    return _items.where((i) => i.status.toLowerCase() == _statusTab).toList();
   }
-
-  List<String> get _categories => _items.map((i) => i.category).toSet().toList();
-
-  double get _totalBOQValue => _items.fold(0, (sum, i) => sum + i.boqQty);
-  double get _totalConsumed => _items.fold(0, (sum, i) => sum + i.consumedQty);
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isMobile = MediaQuery.of(context).size.width < 768;
+    final responsive = Responsive(context);
+    final isMobile = responsive.isMobile;
 
     return ProtectedRoute(
-      title: 'Material Abstract Statement',
+      title: 'Material Approval Sheet',
       route: '/mas',
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Material Abstract Statement', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
-            const SizedBox(height: 4),
-            Text('Summary of material quantities and consumption', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
-          ])),
-          if (!isMobile) Row(children: [
-            MadButton(text: 'Export Excel', icon: LucideIcons.fileSpreadsheet, variant: ButtonVariant.outline, onPressed: () {}),
-            const SizedBox(width: 12),
-            MadButton(text: 'Export PDF', icon: LucideIcons.download, onPressed: () {}),
-          ]),
-        ]),
-        const SizedBox(height: 24),
-        if (!isMobile) Row(children: [
-          Expanded(child: StatCard(title: 'Total Items', value: _items.length.toString(), icon: LucideIcons.package, iconColor: AppTheme.primaryColor)),
-          const SizedBox(width: 16),
-          Expanded(child: StatCard(title: 'BOQ Quantity', value: _totalBOQValue.toStringAsFixed(0), icon: LucideIcons.clipboardList, iconColor: const Color(0xFF8B5CF6))),
-          const SizedBox(width: 16),
-          Expanded(child: StatCard(title: 'Consumed', value: _totalConsumed.toStringAsFixed(0), icon: LucideIcons.trendingDown, iconColor: const Color(0xFFF59E0B))),
-          const SizedBox(width: 16),
-          Expanded(child: StatCard(title: 'Progress', value: _totalBOQValue > 0 ? '${(_totalConsumed / _totalBOQValue * 100).toStringAsFixed(1)}%' : '0%', icon: LucideIcons.chartPie, iconColor: const Color(0xFF22C55E))),
-        ]),
-        if (!isMobile) const SizedBox(height: 24),
-        Wrap(spacing: 12, runSpacing: 12, children: [
-          SizedBox(width: isMobile ? double.infinity : 320, child: MadSearchInput(controller: _searchController, hintText: 'Search items...', onChanged: (v) => setState(() => _searchQuery = v), onClear: () => setState(() => _searchQuery = ''))),
-          if (_categories.isNotEmpty) SizedBox(width: 150, child: MadSelect<String>(value: _categoryFilter, placeholder: 'All Categories', clearable: true, options: _categories.map((c) => MadSelectOption(value: c, label: c)).toList(), onChanged: (v) => setState(() => _categoryFilter = v))),
-        ]),
-        const SizedBox(height: 24),
-        Expanded(
-          child: _isLoading ? const Center(child: CircularProgressIndicator()) : _filteredItems.isEmpty ? _buildEmptyState(isDark) : MadCard(
-            child: Column(children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.3), borderRadius: const BorderRadius.vertical(top: Radius.circular(12))),
-                child: Row(children: [
-                  _buildHeaderCell('Code', flex: 1, isDark: isDark),
-                  _buildHeaderCell('Description', flex: 2, isDark: isDark),
-                  if (!isMobile) ...[_buildHeaderCell('BOQ', flex: 1, isDark: isDark), _buildHeaderCell('Ordered', flex: 1, isDark: isDark), _buildHeaderCell('Received', flex: 1, isDark: isDark), _buildHeaderCell('Consumed', flex: 1, isDark: isDark), _buildHeaderCell('Balance', flex: 1, isDark: isDark)],
-                  _buildHeaderCell('Progress', flex: 1, isDark: isDark),
-                ]),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Material Approval Sheet',
+                      style: TextStyle(
+                        fontSize: responsive.value(mobile: 22, tablet: 26, desktop: 28),
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Manage material specifications and client approvals.',
+                      style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+                    ),
+                  ],
+                ),
               ),
-              Expanded(child: ListView.separated(
-                itemCount: _filteredItems.length,
-                separatorBuilder: (_, __) => Divider(height: 1, color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5)),
-                itemBuilder: (context, index) => _buildTableRow(_filteredItems[index], isDark, isMobile),
-              )),
-            ]),
+              if (!isMobile)
+                MadButton(
+                  text: 'Submit to Client',
+                  icon: LucideIcons.send,
+                  onPressed: () => showToast(context, 'Submitted to client for approval'),
+                ),
+            ],
           ),
-        ),
-      ]),
+          const SizedBox(height: 24),
+
+          MadCard(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Text('Select Project:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
+                  const SizedBox(width: 12),
+                  if (isMobile)
+                    Expanded(
+                      child: MadSelect<String>(
+                        value: _selectedProject,
+                        options: _projectOptions,
+                        onChanged: (v) => setState(() => _selectedProject = v ?? _selectedProject),
+                      ),
+                    )
+                  else
+                    SizedBox(
+                      width: 280,
+                      child: MadSelect<String>(
+                        value: _selectedProject,
+                        options: _projectOptions,
+                        onChanged: (v) => setState(() => _selectedProject = v ?? _selectedProject),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          MadTabsList(
+            tabs: const ['All Items', 'Approved', 'Pending', 'Rejected'],
+            selectedTab: _statusTab == 'all' ? 'All Items' : _statusTab == 'approved' ? 'Approved' : _statusTab == 'pending' ? 'Pending' : 'Rejected',
+            onTabChanged: (tab) {
+              setState(() {
+                _statusTab = tab == 'All Items' ? 'all' : tab.toLowerCase();
+              });
+            },
+          ),
+          const SizedBox(height: 16),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              if (isMobile)
+                MadButton(
+                  text: 'Submit to Client',
+                  icon: LucideIcons.send,
+                  onPressed: () => showToast(context, 'Submitted to client for approval'),
+                ),
+              MadButton(
+                text: 'Add Item',
+                icon: LucideIcons.plus,
+                variant: ButtonVariant.outline,
+                onPressed: _showAddItemDialog,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          Expanded(
+            child: _filteredItems.isEmpty
+                ? _buildEmptyState(isDark)
+                : MadCard(
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.3),
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                          ),
+                          child: Row(
+                            children: [
+                              _buildHeaderCell('Item Code', flex: 1, isDark: isDark),
+                              _buildHeaderCell('Item Name', flex: 1, isDark: isDark),
+                              if (!isMobile) ...[
+                                _buildHeaderCell('Proposed Brand', flex: 1, isDark: isDark),
+                                _buildHeaderCell('Model/Spec', flex: 1, isDark: isDark),
+                              ],
+                              _buildHeaderCell('Status', flex: 1, isDark: isDark),
+                              if (!isMobile) _buildHeaderCell('Client Remarks', flex: 1, isDark: isDark),
+                              const SizedBox(width: 48),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: ListView.separated(
+                            itemCount: _filteredItems.length,
+                            separatorBuilder: (_, _) => Divider(height: 1, color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5)),
+                            itemBuilder: (context, index) => _buildTableRow(_filteredItems[index], isDark, isMobile),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildHeaderCell(String text, {required int flex, required bool isDark}) => Expanded(flex: flex, child: Text(text, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)));
+  Widget _buildHeaderCell(String text, {required int flex, required bool isDark}) {
+    return Expanded(
+      flex: flex,
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String status, bool isDark) {
+    BadgeVariant variant;
+    IconData? icon;
+    switch (status) {
+      case 'Approved':
+        variant = BadgeVariant.success;
+        icon = LucideIcons.circleCheck;
+        break;
+      case 'Pending':
+        variant = BadgeVariant.warning;
+        icon = LucideIcons.clock;
+        break;
+      case 'Rejected':
+        variant = BadgeVariant.destructive;
+        icon = LucideIcons.circleX;
+        break;
+      default:
+        variant = BadgeVariant.outline;
+    }
+    return MadBadge(
+      text: status,
+      variant: variant,
+      icon: icon != null ? Icon(icon, size: 14) : null,
+    );
+  }
 
   Widget _buildTableRow(MASItem item, bool isDark, bool isMobile) {
-    final progressColor = item.percentage > 80 ? const Color(0xFF22C55E) : item.percentage > 50 ? const Color(0xFFF59E0B) : AppTheme.primaryColor;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(children: [
-        Expanded(flex: 1, child: Text(item.itemCode, style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'monospace', fontSize: 12))),
-        Expanded(flex: 2, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(item.description, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
-          Text('${item.unit} | ${item.category}', style: TextStyle(fontSize: 11, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
-        ])),
-        if (!isMobile) ...[
-          Expanded(flex: 1, child: Text(item.boqQty.toStringAsFixed(0), style: const TextStyle(fontSize: 13))),
-          Expanded(flex: 1, child: Text(item.orderedQty.toStringAsFixed(0), style: const TextStyle(fontSize: 13))),
-          Expanded(flex: 1, child: Text(item.receivedQty.toStringAsFixed(0), style: const TextStyle(fontSize: 13))),
-          Expanded(flex: 1, child: Text(item.consumedQty.toStringAsFixed(0), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
-          Expanded(flex: 1, child: Text(item.balanceQty.toStringAsFixed(0), style: TextStyle(fontSize: 13, color: item.balanceQty < 0 ? AppTheme.lightDestructive : null))),
+      child: Row(
+        children: [
+          Expanded(flex: 1, child: Text(item.itemCode, style: const TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
+          Expanded(flex: 1, child: Text(item.itemName, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13), overflow: TextOverflow.ellipsis)),
+          if (!isMobile) ...[
+            Expanded(flex: 1, child: Text(item.proposedBrand, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+            Expanded(flex: 1, child: Text(item.modelSpec, style: TextStyle(fontSize: 13, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), overflow: TextOverflow.ellipsis)),
+          ],
+          Expanded(flex: 1, child: _buildStatusBadge(item.status, isDark)),
+          if (!isMobile) Expanded(flex: 1, child: Text(item.clientRemarks.isEmpty ? '-' : item.clientRemarks, style: TextStyle(fontSize: 12, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), overflow: TextOverflow.ellipsis)),
+          MadDropdownMenuButton(
+            items: [
+              MadMenuItem(label: 'View Details', icon: LucideIcons.eye, onTap: () => _showViewDetails(item)),
+              MadMenuItem(label: 'Edit', icon: LucideIcons.pencil, onTap: () => _showEditItemDialog(item)),
+              MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _confirmDelete(item)),
+            ],
+          ),
         ],
-        Expanded(flex: 1, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('${item.percentage.toStringAsFixed(1)}%', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: progressColor)),
-          const SizedBox(height: 4),
-          ClipRRect(borderRadius: BorderRadius.circular(2), child: LinearProgressIndicator(value: item.percentage / 100, backgroundColor: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.5), valueColor: AlwaysStoppedAnimation<Color>(progressColor), minHeight: 4)),
-        ])),
-      ]),
+      ),
     );
   }
 
   Widget _buildEmptyState(bool isDark) {
-    return Center(child: Padding(padding: const EdgeInsets.all(48), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(LucideIcons.chartBar, size: 64, color: (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground).withOpacity(0.3)),
-      const SizedBox(height: 24),
-      Text('No data available', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
-      const SizedBox(height: 8),
-      Text('Add BOQ items to see the material abstract statement', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
-    ])));
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(LucideIcons.fileCheck, size: 64, color: (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground).withOpacity(0.3)),
+            const SizedBox(height: 24),
+            Text(
+              'No items in this tab',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Add items or switch to another status tab',
+              style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddItemDialog() {
+    String itemCode = '';
+    String itemName = '';
+    String proposedBrand = '';
+    String modelSpec = '';
+    String status = 'Pending';
+
+    MadFormDialog.show(
+      context: context,
+      title: 'Add Item',
+      maxWidth: 500,
+      content: StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MadInput(
+                labelText: 'Item Code',
+                hintText: 'e.g. CPVC-001',
+                onChanged: (v) => itemCode = v,
+              ),
+              const SizedBox(height: 16),
+              MadInput(
+                labelText: 'Item Name',
+                hintText: 'e.g. CPVC Pipe',
+                onChanged: (v) => itemName = v,
+              ),
+              const SizedBox(height: 16),
+              MadInput(
+                labelText: 'Proposed Brand',
+                hintText: 'e.g. Astral',
+                onChanged: (v) => proposedBrand = v,
+              ),
+              const SizedBox(height: 16),
+              MadInput(
+                labelText: 'Model/Specification',
+                hintText: 'e.g. 20mm SDR-11',
+                onChanged: (v) => modelSpec = v,
+              ),
+              const SizedBox(height: 16),
+              MadSelect<String>(
+                labelText: 'Status',
+                value: status,
+                options: const [
+                  MadSelectOption(value: 'Pending', label: 'Pending'),
+                  MadSelectOption(value: 'Approved', label: 'Approved'),
+                  MadSelectOption(value: 'Rejected', label: 'Rejected'),
+                ],
+                onChanged: (v) => setDialogState(() => status = v ?? 'Pending'),
+              ),
+            ],
+          );
+        },
+      ),
+      actions: [
+        MadButton(text: 'Cancel', variant: ButtonVariant.outline, onPressed: () => Navigator.pop(context)),
+        MadButton(
+          text: 'Add',
+          onPressed: () {
+            final maxId = _items.isEmpty ? 0 : _items.map((e) => int.tryParse(e.id) ?? 0).reduce((a, b) => a > b ? a : b);
+            setState(() {
+              _items.add(MASItem(
+                id: (maxId + 1).toString(),
+                itemCode: itemCode.isEmpty ? 'ITEM-${maxId + 1}' : itemCode,
+                itemName: itemName.isEmpty ? 'New Item' : itemName,
+                proposedBrand: proposedBrand,
+                modelSpec: modelSpec,
+                status: status,
+              ));
+            });
+            Navigator.pop(context);
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showEditItemDialog(MASItem item) {
+    final codeCtrl = TextEditingController(text: item.itemCode);
+    final nameCtrl = TextEditingController(text: item.itemName);
+    final brandCtrl = TextEditingController(text: item.proposedBrand);
+    final specCtrl = TextEditingController(text: item.modelSpec);
+    final remarksCtrl = TextEditingController(text: item.clientRemarks);
+    String status = item.status;
+
+    MadFormDialog.show(
+      context: context,
+      title: 'Edit Item',
+      maxWidth: 500,
+      content: StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MadInput(
+                labelText: 'Item Code',
+                controller: codeCtrl,
+                onChanged: (v) {},
+              ),
+              const SizedBox(height: 16),
+              MadInput(
+                labelText: 'Item Name',
+                controller: nameCtrl,
+                onChanged: (v) {},
+              ),
+              const SizedBox(height: 16),
+              MadInput(
+                labelText: 'Proposed Brand',
+                controller: brandCtrl,
+                onChanged: (v) {},
+              ),
+              const SizedBox(height: 16),
+              MadInput(
+                labelText: 'Model/Specification',
+                controller: specCtrl,
+                onChanged: (v) {},
+              ),
+              const SizedBox(height: 16),
+              MadSelect<String>(
+                labelText: 'Status',
+                value: status,
+                options: const [
+                  MadSelectOption(value: 'Pending', label: 'Pending'),
+                  MadSelectOption(value: 'Approved', label: 'Approved'),
+                  MadSelectOption(value: 'Rejected', label: 'Rejected'),
+                ],
+                onChanged: (v) => setDialogState(() => status = v ?? status),
+              ),
+              const SizedBox(height: 16),
+              MadTextarea(
+                labelText: 'Client Remarks',
+                controller: remarksCtrl,
+                minLines: 2,
+                onChanged: (v) {},
+              ),
+            ],
+          );
+        },
+      ),
+      actions: [
+        MadButton(text: 'Cancel', variant: ButtonVariant.outline, onPressed: () => Navigator.pop(context)),
+        MadButton(
+          text: 'Save',
+          onPressed: () {
+            setState(() {
+              final idx = _items.indexWhere((e) => e.id == item.id);
+              if (idx >= 0) {
+                _items[idx] = item.copyWith(
+                  itemCode: codeCtrl.text,
+                  itemName: nameCtrl.text,
+                  proposedBrand: brandCtrl.text,
+                  modelSpec: specCtrl.text,
+                  status: status,
+                  clientRemarks: remarksCtrl.text,
+                );
+              }
+            });
+            Navigator.pop(context);
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showViewDetails(MASItem item) {
+    MadDialog.show(
+      context: context,
+      title: 'Item Details',
+      description: '${item.itemName} (${item.itemCode})',
+      content: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _detailRow('Item Code', item.itemCode),
+            _detailRow('Item Name', item.itemName),
+            _detailRow('Proposed Brand', item.proposedBrand),
+            _detailRow('Model/Spec', item.modelSpec),
+            _detailRow('Status', item.status),
+            _detailRow('Client Remarks', item.clientRemarks.isEmpty ? '-' : item.clientRemarks),
+          ],
+        ),
+      ),
+      actions: [MadButton(text: 'Close', onPressed: () => Navigator.pop(context))],
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 120, child: Text(label, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13))),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(MASItem item) {
+    MadDialog.confirm(
+      context: context,
+      title: 'Delete Item',
+      description: 'Remove "${item.itemName}" from the approval sheet?',
+      confirmText: 'Delete',
+      destructive: true,
+    ).then((ok) {
+      if (ok == true && mounted) setState(() => _items.removeWhere((e) => e.id == item.id));
+    });
   }
 }

@@ -111,7 +111,9 @@ class _MainLayoutState extends State<MainLayout> {
                   ],
                 ),
               
-              // Main content
+              // Main content – matches React's flex-1 + overflow-y-auto layout.
+              // Each page handles its own scrolling; we just provide bounded
+              // height so Expanded widgets inside pages work correctly.
               Expanded(
                 child: Column(
                   children: [
@@ -122,11 +124,14 @@ class _MainLayoutState extends State<MainLayout> {
                       },
                     ),
                     Expanded(
-                      child: SingleChildScrollView(
+                      child: Padding(
                         padding: responsive.padding,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1400),
-                          child: widget.child,
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1400),
+                            child: widget.child,
+                          ),
                         ),
                       ),
                     ),

@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/app_theme.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../utils/responsive.dart';
 
 /// Material Entry Report model
 class MER {
@@ -80,7 +81,8 @@ class _MERPageFullState extends State<MERPageFull> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isMobile = MediaQuery.of(context).size.width < 768;
+    final responsive = Responsive(context);
+    final isMobile = responsive.isMobile;
 
     return ProtectedRoute(
       title: 'Material Entry Report',
@@ -88,9 +90,9 @@ class _MERPageFullState extends State<MERPageFull> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Material Entry Report', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
+            Text('Material Entry Report', style: TextStyle(fontSize: responsive.value<double>(mobile: 22, tablet: 26, desktop: 28), fontWeight: FontWeight.bold, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
             const SizedBox(height: 4),
-            Text('Record and verify material entries', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
+            Text('Record and verify material entries', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), overflow: TextOverflow.ellipsis, maxLines: 1),
           ])),
           if (!isMobile) MadButton(text: 'New Entry', icon: LucideIcons.plus, onPressed: () => _showEntryDialog()),
         ]),
@@ -113,7 +115,7 @@ class _MERPageFullState extends State<MERPageFull> {
             child: Column(children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                decoration: BoxDecoration(color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.3), borderRadius: const BorderRadius.vertical(top: Radius.circular(12))),
+                decoration: BoxDecoration(color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withValues(alpha: 0.3), borderRadius: const BorderRadius.vertical(top: Radius.circular(12))),
                 child: Row(children: [
                   _buildHeaderCell('MER #', flex: 1, isDark: isDark),
                   _buildHeaderCell('Material', flex: 2, isDark: isDark),
@@ -124,7 +126,7 @@ class _MERPageFullState extends State<MERPageFull> {
               ),
               Expanded(child: ListView.separated(
                 itemCount: _paginatedEntries.length,
-                separatorBuilder: (_, __) => Divider(height: 1, color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5)),
+                separatorBuilder: (_, _2) => Divider(height: 1, color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withValues(alpha: 0.5)),
                 itemBuilder: (context, index) => _buildTableRow(_paginatedEntries[index], isDark, isMobile),
               )),
               if (_totalPages > 1) _buildPagination(isDark),
@@ -141,14 +143,14 @@ class _MERPageFullState extends State<MERPageFull> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Row(children: [
-        Expanded(flex: 1, child: Text(entry.merNo, style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+        Expanded(flex: 1, child: Text(entry.merNo, style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
         Expanded(flex: 2, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(entry.material, style: const TextStyle(fontWeight: FontWeight.w500)),
+          Text(entry.material, style: const TextStyle(fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
           if (isMobile) Text('${entry.quantity} ${entry.unit}', style: TextStyle(fontSize: 12, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
         ])),
         if (!isMobile) ...[
-          Expanded(flex: 1, child: Text('${entry.quantity.toStringAsFixed(0)} ${entry.unit}')),
-          Expanded(flex: 1, child: Text(entry.challanNo ?? '-')),
+          Expanded(flex: 1, child: Text('${entry.quantity.toStringAsFixed(0)} ${entry.unit}', overflow: TextOverflow.ellipsis)),
+          Expanded(flex: 1, child: Text(entry.challanNo ?? '-', overflow: TextOverflow.ellipsis)),
         ],
         Expanded(flex: 1, child: MadBadge(text: entry.status, variant: entry.status == 'Verified' ? BadgeVariant.default_ : BadgeVariant.secondary)),
         MadDropdownMenuButton(items: [
@@ -163,7 +165,7 @@ class _MERPageFullState extends State<MERPageFull> {
   Widget _buildPagination(bool isDark) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5)))),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withValues(alpha: 0.5)))),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Text('Page $_currentPage of $_totalPages', style: TextStyle(fontSize: 13, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
         Row(children: [
@@ -177,7 +179,7 @@ class _MERPageFullState extends State<MERPageFull> {
 
   Widget _buildEmptyState(bool isDark) {
     return Center(child: Padding(padding: const EdgeInsets.all(48), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(LucideIcons.clipboardList, size: 64, color: (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground).withOpacity(0.3)),
+      Icon(LucideIcons.clipboardList, size: 64, color: (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground).withValues(alpha: 0.3)),
       const SizedBox(height: 24),
       Text('No material entries yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
       const SizedBox(height: 8),

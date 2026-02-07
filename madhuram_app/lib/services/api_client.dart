@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -5,6 +6,10 @@ import 'auth_storage.dart';
 
 class ApiClient {
   static const String baseUrl = 'https://api.festmate.in';
+
+  /// Global timeout for ALL HTTP requests.
+  /// If the server is unreachable, calls fail fast instead of hanging forever.
+  static const Duration _httpTimeout = Duration(seconds: 6);
 
   // ============================================================================
   // Helper Methods
@@ -16,6 +21,30 @@ class ApiClient {
     }
     return headers;
   }
+
+  /// Wrapper: GET with timeout
+  static Future<http.Response> _get(Uri uri, {Map<String, String>? headers}) =>
+      http.get(uri, headers: headers).timeout(_httpTimeout);
+
+  /// Wrapper: POST with timeout
+  static Future<http.Response> _post(Uri uri,
+          {Map<String, String>? headers, Object? body}) =>
+      http.post(uri, headers: headers, body: body).timeout(_httpTimeout);
+
+  /// Wrapper: PUT with timeout
+  static Future<http.Response> _put(Uri uri,
+          {Map<String, String>? headers, Object? body}) =>
+      http.put(uri, headers: headers, body: body).timeout(_httpTimeout);
+
+  /// Wrapper: DELETE with timeout
+  static Future<http.Response> _delete(Uri uri,
+          {Map<String, String>? headers}) =>
+      http.delete(uri, headers: headers).timeout(_httpTimeout);
+
+  /// Wrapper: PATCH with timeout
+  static Future<http.Response> _patch(Uri uri,
+          {Map<String, String>? headers, Object? body}) =>
+      http.patch(uri, headers: headers, body: body).timeout(_httpTimeout);
 
   /// Helper for multipart form-data requests (for file uploads)
   static Future<Map<String, dynamic>> _multipartRequest(
@@ -46,7 +75,7 @@ class ApiClient {
       }
     }
     
-    final streamedResponse = await request.send();
+    final streamedResponse = await request.send().timeout(_httpTimeout);
     final response = await http.Response.fromStream(streamedResponse);
     return _handleResponse(response);
   }
@@ -79,7 +108,7 @@ class ApiClient {
   // ============================================================================
   static Future<Map<String, dynamic>> login(String email, String password) async {
     final uri = Uri.parse('$baseUrl/api/auth/login');
-    final res = await http.post(
+    final res = await _post(
       uri,
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email, 'password': password}),
@@ -98,7 +127,7 @@ class ApiClient {
 
   static Future<Map<String, dynamic>> signup(Map<String, dynamic> userData) async {
     final uri = Uri.parse('$baseUrl/api/auth/signup');
-    final res = await http.post(
+    final res = await _post(
       uri,
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(userData),
@@ -109,7 +138,7 @@ class ApiClient {
   static Future<Map<String, dynamic>> logout() async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/auth/logout');
-    final res = await http.post(uri, headers: _authHeaders(token));
+    final res = await _post(uri, headers: _authHeaders(token));
     await AuthStorage.clear();
     return _handleResponse(res);
   }
@@ -129,21 +158,21 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/auth/users');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> updateUser(String userId, Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/auth/users/$userId');
-    final res = await http.put(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _put(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> deleteUser(String userId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/auth/users/$userId');
-    final res = await http.delete(uri, headers: _authHeaders(token));
+    final res = await _delete(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -180,35 +209,35 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/projects');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> getProject(String projectId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/projects/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> createProject(Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/projects');
-    final res = await http.post(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _post(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> updateProject(String projectId, Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/projects/$projectId');
-    final res = await http.put(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _put(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> deleteProject(String projectId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/projects/$projectId');
-    final res = await http.delete(uri, headers: _authHeaders(token));
+    final res = await _delete(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -308,28 +337,28 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/boq/project/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> createBOQ(Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/boq');
-    final res = await http.post(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _post(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> updateBOQ(String boqId, Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/boq/$boqId');
-    final res = await http.put(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _put(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> deleteBOQ(String boqId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/boq/$boqId');
-    final res = await http.delete(uri, headers: _authHeaders(token));
+    final res = await _delete(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -337,7 +366,7 @@ class ApiClient {
   static Future<Map<String, dynamic>> getBOQ(String boqId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/boq/$boqId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -345,7 +374,7 @@ class ApiClient {
   static Future<Map<String, dynamic>> getAllBOQs() async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/boq');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -422,28 +451,28 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/po/project/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> createPO(Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/po');
-    final res = await http.post(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _post(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> updatePO(String poId, Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/po/$poId');
-    final res = await http.put(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _put(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> deletePO(String poId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/po/$poId');
-    final res = await http.delete(uri, headers: _authHeaders(token));
+    final res = await _delete(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -451,7 +480,7 @@ class ApiClient {
   static Future<Map<String, dynamic>> getPO(String poId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/po/$poId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -475,28 +504,28 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/mir/project/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> createMIR(Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/mir');
-    final res = await http.post(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _post(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> updateMIR(String mirId, Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/mir/$mirId');
-    final res = await http.put(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _put(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> deleteMIR(String mirId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/mir/$mirId');
-    final res = await http.delete(uri, headers: _authHeaders(token));
+    final res = await _delete(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -504,7 +533,7 @@ class ApiClient {
   static Future<Map<String, dynamic>> getMIR(String mirId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/mir/$mirId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -512,7 +541,7 @@ class ApiClient {
   static Future<Map<String, dynamic>> getAllMIRs() async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/mir');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -536,28 +565,28 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/itr/project/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> createITR(Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/itr');
-    final res = await http.post(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _post(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> updateITR(String itrId, Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/itr/$itrId');
-    final res = await http.put(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _put(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> deleteITR(String itrId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/itr/$itrId');
-    final res = await http.delete(uri, headers: _authHeaders(token));
+    final res = await _delete(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -565,7 +594,7 @@ class ApiClient {
   static Future<Map<String, dynamic>> getITR(String itrId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/itr/$itrId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -573,7 +602,7 @@ class ApiClient {
   static Future<Map<String, dynamic>> getAllITRs() async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/itr');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -592,28 +621,28 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/vendors');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> createVendor(Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/vendors');
-    final res = await http.post(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _post(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> updateVendor(String vendorId, Map<String, dynamic> data) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/vendors/$vendorId');
-    final res = await http.put(uri, headers: _authHeaders(token), body: jsonEncode(data));
+    final res = await _put(uri, headers: _authHeaders(token), body: jsonEncode(data));
     return _handleResponse(res);
   }
 
   static Future<Map<String, dynamic>> deleteVendor(String vendorId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/vendors/$vendorId');
-    final res = await http.delete(uri, headers: _authHeaders(token));
+    final res = await _delete(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -632,7 +661,7 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/materials');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -651,7 +680,7 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/stock-areas');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -669,7 +698,7 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/stock-transfers/project/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -687,7 +716,7 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/consumption/project/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -705,7 +734,7 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/returns/project/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -723,7 +752,7 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/challans/project/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -741,7 +770,7 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/billing/project/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -770,7 +799,7 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/reports/project/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -790,7 +819,7 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/audit-logs/project/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -828,7 +857,7 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/dashboard/$projectId');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -838,7 +867,7 @@ class ApiClient {
   /// Forgot password request
   static Future<Map<String, dynamic>> forgotPassword(String email) async {
     final uri = Uri.parse('$baseUrl/api/auth/forgot-password');
-    final res = await http.post(
+    final res = await _post(
       uri,
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email}),
@@ -882,7 +911,7 @@ class ApiClient {
       };
     }
     final uri = Uri.parse('$baseUrl/api/v1/notifications');
-    final res = await http.get(uri, headers: _authHeaders(token));
+    final res = await _get(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -890,7 +919,7 @@ class ApiClient {
   static Future<Map<String, dynamic>> markNotificationRead(String notificationId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/v1/notifications/$notificationId/read');
-    final res = await http.patch(uri, headers: _authHeaders(token));
+    final res = await _patch(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -898,7 +927,7 @@ class ApiClient {
   static Future<Map<String, dynamic>> deleteNotification(String notificationId) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/v1/notifications/$notificationId');
-    final res = await http.delete(uri, headers: _authHeaders(token));
+    final res = await _delete(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 
@@ -906,7 +935,7 @@ class ApiClient {
   static Future<Map<String, dynamic>> markAllNotificationsRead() async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/v1/notifications/read-all');
-    final res = await http.patch(uri, headers: _authHeaders(token));
+    final res = await _patch(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
 }

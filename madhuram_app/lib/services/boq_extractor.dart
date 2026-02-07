@@ -130,7 +130,6 @@ class BOQExtractor {
       // Extract text from all pages
       final StringBuffer textBuffer = StringBuffer();
       for (int i = 0; i < document.pages.count; i++) {
-        final page = document.pages[i];
         final String pageText = PdfTextExtractor(document).extractText(startPageIndex: i, endPageIndex: i);
         textBuffer.writeln(pageText);
       }

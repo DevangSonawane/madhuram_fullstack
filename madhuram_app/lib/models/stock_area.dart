@@ -137,6 +137,9 @@ class Return {
   final String reason;
   final String? date;
   final String status;
+  final String? inspectionNotes;
+  final String? targetWarehouse;
+  final String? targetZone;
 
   const Return({
     required this.id,
@@ -145,6 +148,9 @@ class Return {
     required this.reason,
     this.date,
     this.status = 'Pending',
+    this.inspectionNotes,
+    this.targetWarehouse,
+    this.targetZone,
   });
 
   factory Return.fromJson(Map<String, dynamic> json) {
@@ -155,6 +161,9 @@ class Return {
       reason: json['reason'] ?? '',
       date: json['date'],
       status: json['status'] ?? 'Pending',
+      inspectionNotes: json['inspection_notes'],
+      targetWarehouse: json['target_warehouse'],
+      targetZone: json['target_zone'],
     );
   }
 
@@ -165,5 +174,32 @@ class Return {
     'reason': reason,
     'date': date,
     'status': status,
+    'inspection_notes': inspectionNotes,
+    'target_warehouse': targetWarehouse,
+    'target_zone': targetZone,
   };
+
+  Return copyWith({
+    String? id,
+    String? material,
+    double? quantity,
+    String? reason,
+    String? date,
+    String? status,
+    String? inspectionNotes,
+    String? targetWarehouse,
+    String? targetZone,
+  }) {
+    return Return(
+      id: id ?? this.id,
+      material: material ?? this.material,
+      quantity: quantity ?? this.quantity,
+      reason: reason ?? this.reason,
+      date: date ?? this.date,
+      status: status ?? this.status,
+      inspectionNotes: inspectionNotes ?? this.inspectionNotes,
+      targetWarehouse: targetWarehouse ?? this.targetWarehouse,
+      targetZone: targetZone ?? this.targetZone,
+    );
+  }
 }

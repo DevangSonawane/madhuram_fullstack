@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../utils/responsive.dart';
 import '../theme/app_theme.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
@@ -95,8 +96,8 @@ class _DocumentsPageFullState extends State<DocumentsPageFull> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isMobile = MediaQuery.of(context).size.width < 768;
-    final screenWidth = MediaQuery.of(context).size.width;
+    final responsive = Responsive(context);
+    final isMobile = responsive.isMobile;
 
     return ProtectedRoute(
       title: 'Documents',
@@ -104,9 +105,9 @@ class _DocumentsPageFullState extends State<DocumentsPageFull> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Documents', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
+            Text('Documents', style: TextStyle(fontSize: responsive.value(mobile: 22, tablet: 26, desktop: 28), fontWeight: FontWeight.bold, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground), overflow: TextOverflow.ellipsis),
             const SizedBox(height: 4),
-            Text('Manage project documents and files', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
+            Text('Manage project documents and files', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), overflow: TextOverflow.ellipsis),
           ])),
           if (!isMobile) MadButton(text: 'Upload File', icon: LucideIcons.upload, onPressed: () => _showUploadDialog()),
         ]),
@@ -129,7 +130,7 @@ class _DocumentsPageFullState extends State<DocumentsPageFull> {
         const SizedBox(height: 24),
         Expanded(
           child: _isLoading ? const Center(child: CircularProgressIndicator()) : _filteredDocuments.isEmpty ? _buildEmptyState(isDark) : GridView.builder(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: isMobile ? 1 : (screenWidth > 1200 ? 4 : 3), crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: isMobile ? 3 : 1.5),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: responsive.value(mobile: 1, tablet: 2, desktop: responsive.screenWidth > 1200 ? 4 : 3), crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: isMobile ? 3 : 1.5),
             itemCount: _filteredDocuments.length,
             itemBuilder: (context, index) => _buildDocumentCard(_filteredDocuments[index], isDark),
           ),
@@ -153,10 +154,10 @@ class _DocumentsPageFullState extends State<DocumentsPageFull> {
             ),
             const Spacer(),
             MadDropdownMenuButton(items: [
-              MadMenuItem(label: 'Download', icon: LucideIcons.download, onTap: () {}),
-              MadMenuItem(label: 'Preview', icon: LucideIcons.eye, onTap: () {}),
-              MadMenuItem(label: 'Share', icon: LucideIcons.share2, onTap: () {}),
-              MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () {}),
+              MadMenuItem(label: 'Download', icon: LucideIcons.download, onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Downloading ${doc.name}...')))),
+              MadMenuItem(label: 'Preview', icon: LucideIcons.eye, onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preview ${doc.name}')))),
+              MadMenuItem(label: 'Share', icon: LucideIcons.share2, onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Share ${doc.name}')))),
+              MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _confirmDeleteDocument(doc)),
             ]),
           ]),
           const SizedBox(height: 12),
@@ -184,6 +185,21 @@ class _DocumentsPageFullState extends State<DocumentsPageFull> {
       const SizedBox(height: 24),
       MadButton(text: 'Upload File', icon: LucideIcons.upload, onPressed: () => _showUploadDialog()),
     ])));
+  }
+
+  void _confirmDeleteDocument(Document doc) {
+    MadDialog.confirm(
+      context: context,
+      title: 'Delete Document',
+      description: 'Are you sure you want to delete "${doc.name}"? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      destructive: true,
+    ).then((confirmed) {
+      if (confirmed != true || !mounted) return;
+      setState(() => _documents.removeWhere((d) => d.id == doc.id));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Document deleted')));
+    });
   }
 
   void _showUploadDialog() {

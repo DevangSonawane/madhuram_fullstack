@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
+import 'package:intl/intl.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/app_theme.dart';
 import '../store/app_state.dart';
@@ -7,6 +8,7 @@ import '../services/api_client.dart';
 import '../models/stock_area.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../demo_data/remaining_modules_demo.dart';
 
 /// Stock Transfers page matching React's StockTransfers page
 class StockTransfersPage extends StatefulWidget {
@@ -17,8 +19,11 @@ class StockTransfersPage extends StatefulWidget {
 }
 
 class _StockTransfersPageState extends State<StockTransfersPage> {
-  bool _isLoading = true;
-  List<StockTransfer> _transfers = [];
+  // START WITH DEMO DATA – never show blank
+  bool _isLoading = false;
+  List<StockTransfer> _transfers = StockTransfersDemo.transfers
+      .map((e) => StockTransfer.fromJson(e))
+      .toList();
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -28,6 +33,7 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
   @override
   void initState() {
     super.initState();
+    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadTransfers();
     });
@@ -39,27 +45,46 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
     super.dispose();
   }
 
+  void _seedDemoData() {
+    debugPrint('[StockTransfers] API unavailable – falling back to demo data');
+    setState(() {
+      _transfers = StockTransfersDemo.transfers.map((e) => StockTransfer.fromJson(e)).toList();
+      _isLoading = false;
+    });
+  }
+
   Future<void> _loadTransfers() async {
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
 
     if (projectId.isEmpty) {
-      setState(() => _isLoading = false);
+      _seedDemoData();
       return;
     }
 
-    final result = await ApiClient.getStockTransfers(projectId);
+    try {
+      final result = await ApiClient.getStockTransfers(projectId);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (result['success'] == true) {
-      final data = result['data'] as List;
-      setState(() {
-        _transfers = data.map((e) => StockTransfer.fromJson(e)).toList();
-        _isLoading = false;
-      });
-    } else {
-      setState(() => _isLoading = false);
+      if (result['success'] == true) {
+        final data = result['data'] as List;
+        final loaded = data.map((e) => StockTransfer.fromJson(e)).toList();
+        if (loaded.isEmpty) {
+          _seedDemoData();
+        } else {
+          setState(() {
+            _transfers = loaded;
+            _isLoading = false;
+          });
+        }
+      } else {
+        _seedDemoData();
+      }
+    } catch (e) {
+      debugPrint('[StockTransfers] API error: $e – falling back to demo data');
+      if (!mounted) return;
+      _seedDemoData();
     }
   }
 
@@ -195,7 +220,7 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
                 ),
               ),
               SizedBox(
-                width: 150,
+                width: isMobile ? double.infinity : 150,
                 child: MadSelect<String>(
                   value: _statusFilter,
                   placeholder: 'All Status',
@@ -357,6 +382,7 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
               style: TextStyle(
                 color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           Expanded(
@@ -364,7 +390,7 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(transfer.material, style: const TextStyle(fontWeight: FontWeight.w500)),
+                Text(transfer.material, style: const TextStyle(fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
                 if (isMobile)
                   Text(
                     '${transfer.fromArea} → ${transfer.toArea}',
@@ -412,9 +438,10 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
           MadDropdownMenuButton(
             items: [
               MadMenuItem(label: 'View Details', icon: LucideIcons.eye, onTap: () {}),
-              if (transfer.status == 'Pending')
-                MadMenuItem(label: 'Complete', icon: LucideIcons.circleCheck, onTap: () {}),
-              MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () {}),
+              MadMenuItem(label: 'Download Slip', icon: LucideIcons.download, onTap: () => _downloadSlip(transfer)),
+              if (transfer.status != 'Completed')
+                MadMenuItem(label: 'Complete Transfer', icon: LucideIcons.circleCheck, onTap: () => _completeTransfer(transfer)),
+              MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _confirmDeleteTransfer(transfer)),
             ],
           ),
         ],
@@ -466,77 +493,438 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
     );
   }
 
+  void _completeTransfer(StockTransfer transfer) {
+    setState(() {
+      final i = _transfers.indexWhere((t) => t.id == transfer.id);
+      if (i >= 0) {
+        final t = _transfers[i];
+        _transfers[i] = StockTransfer(
+          id: t.id,
+          fromArea: t.fromArea,
+          toArea: t.toArea,
+          material: t.material,
+          quantity: t.quantity,
+          date: t.date,
+          status: 'Completed',
+        );
+      }
+    });
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfer completed')));
+  }
+
+  void _downloadSlip(StockTransfer transfer) {
+    showToast(context, 'Transfer slip would be generated');
+  }
+
+  void _confirmDeleteTransfer(StockTransfer transfer) {
+    MadDialog.confirm(
+      context: context,
+      title: 'Delete Transfer',
+      description: 'Are you sure you want to delete this transfer (${transfer.material})? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      destructive: true,
+    ).then((confirmed) {
+      if (confirmed != true || !mounted) return;
+      setState(() => _transfers.removeWhere((t) => t.id == transfer.id));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfer deleted')));
+    });
+  }
+
   void _showTransferDialog() {
     MadFormDialog.show(
       context: context,
       title: 'New Stock Transfer',
-      maxWidth: 500,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+      maxWidth: 600,
+      content: _StockTransferWizardContent(
+        onSubmitted: (newTransfers) {
+          Navigator.of(context).pop();
+          setState(() => _transfers.insertAll(0, newTransfers));
+          _loadTransfers();
+        },
+        onCancel: () => Navigator.of(context).pop(),
+      ),
+      actions: const [],
+    );
+  }
+}
+
+/// One line item for transfer wizard Step 2
+class _TransferWizardItem {
+  String material = '';
+  String quantity = '';
+  String unit = 'Nos';
+
+  _TransferWizardItem();
+}
+
+/// One editable row for Items step in transfer wizard
+class _TransferItemRow extends StatefulWidget {
+  final _TransferWizardItem item;
+  final int index;
+  final bool canRemove;
+  final VoidCallback onRemove;
+
+  const _TransferItemRow({
+    super.key,
+    required this.item,
+    required this.index,
+    required this.canRemove,
+    required this.onRemove,
+  });
+
+  @override
+  State<_TransferItemRow> createState() => _TransferItemRowState();
+}
+
+class _TransferItemRowState extends State<_TransferItemRow> {
+  late TextEditingController _materialController;
+  late TextEditingController _qtyController;
+
+  @override
+  void initState() {
+    super.initState();
+    _materialController = TextEditingController(text: widget.item.material);
+    _qtyController = TextEditingController(text: widget.item.quantity);
+  }
+
+  @override
+  void dispose() {
+    _materialController.dispose();
+    _qtyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    return MadCard(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Item ${widget.index + 1}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                IconButton(
+                  icon: const Icon(LucideIcons.trash2, size: 18),
+                  onPressed: widget.canRemove ? widget.onRemove : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            MadInput(
+              labelText: 'Material',
+              hintText: 'Material name',
+              controller: _materialController,
+              onChanged: (v) => item.material = v,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: MadInput(
+                    labelText: 'Quantity',
+                    hintText: '0',
+                    keyboardType: TextInputType.number,
+                    controller: _qtyController,
+                    onChanged: (v) => item.quantity = v,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: MadSelect<String>(
+                    labelText: 'Unit',
+                    placeholder: 'Unit',
+                    value: item.unit,
+                    options: const [
+                      MadSelectOption(value: 'Nos', label: 'Nos'),
+                      MadSelectOption(value: 'Bags', label: 'Bags'),
+                      MadSelectOption(value: 'Meters', label: 'Meters'),
+                      MadSelectOption(value: 'KG', label: 'KG'),
+                    ],
+                    onChanged: (v) => setState(() => item.unit = v ?? 'Nos'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 3-step wizard content for New Stock Transfer
+class _StockTransferWizardContent extends StatefulWidget {
+  final void Function(List<StockTransfer> newTransfers) onSubmitted;
+  final VoidCallback onCancel;
+
+  const _StockTransferWizardContent({
+    required this.onSubmitted,
+    required this.onCancel,
+  });
+
+  @override
+  State<_StockTransferWizardContent> createState() => _StockTransferWizardContentState();
+}
+
+class _StockTransferWizardContentState extends State<_StockTransferWizardContent> {
+  int _step = 0;
+  String? _sourceLocation;
+  String? _destinationLocation;
+  final _dateController = TextEditingController();
+  final _reasonController = TextEditingController();
+  final List<_TransferWizardItem> _items = [_TransferWizardItem()];
+
+  static const List<MadSelectOption<String>> _locationOptions = [
+    MadSelectOption(value: 'main', label: 'Main Warehouse'),
+    MadSelectOption(value: 'secondary', label: 'Secondary Store'),
+    MadSelectOption(value: 'site-a', label: 'Site A'),
+    MadSelectOption(value: 'site-b', label: 'Site B'),
+  ];
+
+  @override
+  void dispose() {
+    _dateController.dispose();
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2030),
+    );
+    if (date != null) _dateController.text = DateFormat('yyyy-MM-dd').format(date);
+  }
+
+  Widget _buildStepIndicator() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      children: [
+        _stepChip(0, 'Source & Destination', isDark),
+        const SizedBox(width: 8),
+        _stepChip(1, 'Items', isDark),
+        const SizedBox(width: 8),
+        _stepChip(2, 'Review', isDark),
+      ],
+    );
+  }
+
+  Widget _stepChip(int step, String label, bool isDark) {
+    final active = _step == step;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? AppTheme.primaryColor : (isDark ? AppTheme.darkMuted : AppTheme.lightMuted),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+          color: active ? Colors.white : (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStep1() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MadSelect<String>(
+          labelText: 'Source Location / Warehouse',
+          value: _sourceLocation,
+          placeholder: 'Select source',
+          options: _locationOptions,
+          onChanged: (v) => setState(() => _sourceLocation = v),
+        ),
+        const SizedBox(height: 16),
+        MadSelect<String>(
+          labelText: 'Destination Location / Warehouse',
+          value: _destinationLocation,
+          placeholder: 'Select destination',
+          options: _locationOptions,
+          onChanged: (v) => setState(() => _destinationLocation = v),
+        ),
+        const SizedBox(height: 16),
+        GestureDetector(
+          onTap: _pickDate,
+          child: AbsorbPointer(
+            child: MadInput(
+              controller: _dateController,
+              labelText: 'Transfer Date',
+              hintText: 'Select date',
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        MadTextarea(
+          controller: _reasonController,
+          labelText: 'Reason / Notes',
+          hintText: 'Optional reason or notes...',
+          minLines: 2,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep2() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ...List.generate(_items.length, (i) {
+          final item = _items[i];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: _TransferItemRow(
+              key: ObjectKey(item),
+              item: item,
+              index: i,
+              canRemove: _items.length > 1,
+              onRemove: () => setState(() => _items.removeAt(i)),
+            ),
+          );
+        }),
+        MadButton(
+          text: 'Add Item',
+          icon: LucideIcons.plus,
+          variant: ButtonVariant.outline,
+          onPressed: () => setState(() => _items.add(_TransferWizardItem())),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep3() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final sourceLabel = _locationOptions.where((o) => o.value == _sourceLocation).map((o) => o.label).firstOrNull ?? _sourceLocation ?? '-';
+    final destLabel = _locationOptions.where((o) => o.value == _destinationLocation).map((o) => o.label).firstOrNull ?? _destinationLocation ?? '-';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MadCard(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Summary', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
+                const SizedBox(height: 12),
+                _summaryRow('Source', sourceLabel),
+                _summaryRow('Destination', destLabel),
+                _summaryRow('Transfer Date', _dateController.text.isEmpty ? '-' : _dateController.text),
+                if (_reasonController.text.trim().isNotEmpty) _summaryRow('Reason / Notes', _reasonController.text.trim()),
+                const SizedBox(height: 12),
+                const Text('Items', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                ..._items.asMap().entries.map((e) {
+                  final i = e.key + 1;
+                  final item = e.value;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text('$i. ${item.material.isNotEmpty ? item.material : "(No material)"} - ${item.quantity} ${item.unit}'),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _summaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          MadSelect<String>(
-            labelText: 'Material',
-            placeholder: 'Select material',
-            options: const [
-              MadSelectOption(value: 'cement', label: 'Cement OPC 53'),
-              MadSelectOption(value: 'pvc', label: 'PVC Pipe 4"'),
-            ],
-            onChanged: (value) {},
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: MadSelect<String>(
-                  labelText: 'From Area',
-                  placeholder: 'Select source',
-                  options: const [
-                    MadSelectOption(value: 'main', label: 'Main Warehouse'),
-                    MadSelectOption(value: 'secondary', label: 'Secondary Store'),
-                  ],
-                  onChanged: (value) {},
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: MadSelect<String>(
-                  labelText: 'To Area',
-                  placeholder: 'Select destination',
-                  options: const [
-                    MadSelectOption(value: 'main', label: 'Main Warehouse'),
-                    MadSelectOption(value: 'secondary', label: 'Secondary Store'),
-                  ],
-                  onChanged: (value) {},
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          MadInput(
-            labelText: 'Quantity',
-            hintText: 'Enter quantity to transfer',
-            keyboardType: TextInputType.number,
-          ),
-          const SizedBox(height: 16),
-          MadTextarea(
-            labelText: 'Notes',
-            hintText: 'Optional notes...',
-            minLines: 2,
-          ),
+          SizedBox(width: 120, child: Text(label, style: const TextStyle(fontWeight: FontWeight.w500))),
+          Expanded(child: Text(value.isEmpty ? '-' : value)),
         ],
       ),
-      actions: [
-        MadButton(
-          text: 'Cancel',
-          variant: ButtonVariant.outline,
-          onPressed: () => Navigator.pop(context),
+    );
+  }
+
+  void _submit() {
+    final fromArea = _sourceLocation ?? 'main';
+    final toArea = _destinationLocation ?? 'secondary';
+    final dateStr = _dateController.text.trim().isEmpty ? DateFormat('yyyy-MM-dd').format(DateTime.now()) : _dateController.text.trim();
+    final baseId = 'st-${DateTime.now().millisecondsSinceEpoch}';
+    final newTransfers = <StockTransfer>[];
+    for (var i = 0; i < _items.length; i++) {
+      final item = _items[i];
+      final mat = item.material.trim().isEmpty ? 'Item ${i + 1}' : item.material;
+      final qty = (double.tryParse(item.quantity) ?? 0);
+      newTransfers.add(StockTransfer(
+        id: '$baseId-$i',
+        fromArea: fromArea,
+        toArea: toArea,
+        material: mat,
+        quantity: qty,
+        date: dateStr,
+        status: 'Pending',
+      ));
+    }
+    if (newTransfers.isEmpty) {
+      newTransfers.add(StockTransfer(
+        id: baseId,
+        fromArea: fromArea,
+        toArea: toArea,
+        material: 'Draft',
+        quantity: 0,
+        date: dateStr,
+        status: 'Pending',
+      ));
+    }
+    widget.onSubmitted(newTransfers);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildStepIndicator(),
+        const SizedBox(height: 24),
+        Flexible(
+          child: SingleChildScrollView(
+            child: _step == 0 ? _buildStep1() : _step == 1 ? _buildStep2() : _buildStep3(),
+          ),
         ),
-        MadButton(
-          text: 'Create Transfer',
-          onPressed: () {
-            Navigator.pop(context);
-            _loadTransfers();
-          },
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            MadButton(text: 'Cancel', variant: ButtonVariant.outline, onPressed: widget.onCancel),
+            const SizedBox(width: 12),
+            if (_step > 0)
+              MadButton(
+                text: 'Back',
+                variant: ButtonVariant.outline,
+                onPressed: () => setState(() => _step--),
+              ),
+            if (_step > 0) const SizedBox(width: 12),
+            if (_step == 2)
+              MadButton(text: 'Submit Transfer', onPressed: _submit)
+            else
+              MadButton(
+                text: 'Next',
+                onPressed: () => setState(() => _step++),
+              ),
+          ],
         ),
       ],
     );

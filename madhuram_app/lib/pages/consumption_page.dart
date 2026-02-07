@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/app_theme.dart';
@@ -7,6 +8,8 @@ import '../services/api_client.dart';
 import '../models/stock_area.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../utils/responsive.dart';
+import '../demo_data/remaining_modules_demo.dart';
 
 /// Consumption tracking page matching React's Consumption page
 class ConsumptionPage extends StatefulWidget {
@@ -17,8 +20,11 @@ class ConsumptionPage extends StatefulWidget {
 }
 
 class _ConsumptionPageState extends State<ConsumptionPage> {
-  bool _isLoading = true;
-  List<Consumption> _consumptions = [];
+  // START WITH DEMO DATA – never show blank
+  bool _isLoading = false;
+  List<Consumption> _consumptions = ConsumptionDemo.consumptions
+      .map((e) => Consumption.fromJson(e))
+      .toList();
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -28,6 +34,7 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
   @override
   void initState() {
     super.initState();
+    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadConsumptions();
     });
@@ -39,27 +46,46 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
     super.dispose();
   }
 
+  void _seedDemoData() {
+    debugPrint('[Consumption] API unavailable – falling back to demo data');
+    setState(() {
+      _consumptions = ConsumptionDemo.consumptions.map((e) => Consumption.fromJson(e)).toList();
+      _isLoading = false;
+    });
+  }
+
   Future<void> _loadConsumptions() async {
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
 
     if (projectId.isEmpty) {
-      setState(() => _isLoading = false);
+      _seedDemoData();
       return;
     }
 
-    final result = await ApiClient.getConsumption(projectId);
+    try {
+      final result = await ApiClient.getConsumption(projectId);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (result['success'] == true) {
-      final data = result['data'] as List;
-      setState(() {
-        _consumptions = data.map((e) => Consumption.fromJson(e)).toList();
-        _isLoading = false;
-      });
-    } else {
-      setState(() => _isLoading = false);
+      if (result['success'] == true) {
+        final data = result['data'] as List;
+        final loaded = data.map((e) => Consumption.fromJson(e)).toList();
+        if (loaded.isEmpty) {
+          _seedDemoData();
+        } else {
+          setState(() {
+            _consumptions = loaded;
+            _isLoading = false;
+          });
+        }
+      } else {
+        _seedDemoData();
+      }
+    } catch (e) {
+      debugPrint('[Consumption] API error: $e – falling back to demo data');
+      if (!mounted) return;
+      _seedDemoData();
     }
   }
 
@@ -100,11 +126,29 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
         .toList();
   }
 
+  /// Mock consumption by floor for chart; top floor by value is 1st (180).
+  static const _consumptionByFloorMock = [
+    {'floor': 'Ground', 'value': 120.0},
+    {'floor': '1st', 'value': 180.0},
+    {'floor': '2nd', 'value': 90.0},
+    {'floor': '3rd', 'value': 150.0},
+  ];
+
+  String get _topDepartmentFloor {
+    const data = _consumptionByFloorMock;
+    if (data.isEmpty) return '-';
+    var max = data.first;
+    for (final e in data) {
+      if ((e['value'] as double) > (max['value'] as double)) max = e;
+    }
+    return max['floor'] as String;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 768;
+    final responsive = Responsive(context);
+    final isMobile = responsive.isMobile;
 
     return ProtectedRoute(
       title: 'Consumption',
@@ -123,10 +167,11 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
                     Text(
                       'Consumption',
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: responsive.value(mobile: 22, tablet: 26, desktop: 28),
                         fontWeight: FontWeight.bold,
                         color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -146,6 +191,10 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
                 ),
             ],
           ),
+          const SizedBox(height: 24),
+
+          // Consumption by floor bar chart (mock data)
+          _buildConsumptionByFloorChart(isDark, isMobile),
           const SizedBox(height: 24),
 
           // Stats cards
@@ -178,6 +227,15 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
                     iconColor: const Color(0xFF8B5CF6),
                   ),
                 ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: StatCard(
+                    title: 'Top Department/Floor',
+                    value: _topDepartmentFloor,
+                    icon: LucideIcons.trendingUp,
+                    iconColor: const Color(0xFF22C55E),
+                  ),
+                ),
               ],
             ),
           if (!isMobile) const SizedBox(height: 24),
@@ -204,7 +262,7 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
               ),
               if (_floors.isNotEmpty)
                 SizedBox(
-                  width: 150,
+                  width: isMobile ? double.infinity : 150,
                   child: MadSelect<String>(
                     value: _floorFilter,
                     placeholder: 'All Floors',
@@ -323,6 +381,113 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
     );
   }
 
+  Widget _buildConsumptionByFloorChart(bool isDark, bool isMobile) {
+    const data = _consumptionByFloorMock;
+    final maxY = data.map((e) => e['value'] as double).reduce((a, b) => a > b ? a : b) * 1.2;
+
+    return MadCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          MadCardHeader(
+            title: MadCardTitle(
+              'Consumption by Department/Floor',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              ),
+            ),
+            subtitle: const MadCardDescription('Material consumption by floor (mock data).'),
+          ),
+          MadCardContent(
+            child: SizedBox(
+              height: isMobile ? 200 : 240,
+              child: BarChart(
+                BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: maxY,
+                  barTouchData: BarTouchData(
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        if (groupIndex < data.length) {
+                          return BarTooltipItem(
+                            '${data[groupIndex]['floor']}\n${(rod.toY).toInt()}',
+                            const TextStyle(color: Colors.white, fontSize: 12),
+                          );
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  titlesData: FlTitlesData(
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          if (value.toInt() >= 0 && value.toInt() < data.length) {
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                data[value.toInt()]['floor'] as String,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                                ),
+                              ),
+                            );
+                          }
+                          return const Text('');
+                        },
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 36,
+                        getTitlesWidget: (value, meta) => Text(
+                          value.toInt().toString(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                          ),
+                        ),
+                      ),
+                    ),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    getDrawingHorizontalLine: (value) => FlLine(
+                      color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5),
+                      strokeWidth: 1,
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  barGroups: data.asMap().entries.map((e) {
+                    return BarChartGroupData(
+                      x: e.key,
+                      barRods: [
+                        BarChartRodData(
+                          toY: e.value['value'] as double,
+                          color: AppTheme.primaryColor,
+                          width: isMobile ? 24 : 32,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildHeaderCell(String text, {required int flex, required bool isDark}) {
     return Expanded(
       flex: flex,
@@ -349,6 +514,7 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
               style: TextStyle(
                 color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           Expanded(
@@ -356,7 +522,7 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(consumption.material, style: const TextStyle(fontWeight: FontWeight.w500)),
+                Text(consumption.material, style: const TextStyle(fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
                 if (isMobile && consumption.floor != null)
                   Text(
                     '${consumption.quantity} ${consumption.unit} - ${consumption.floor}',
@@ -376,7 +542,7 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
-            Expanded(flex: 1, child: Text(consumption.unit)),
+            Expanded(flex: 1, child: Text(consumption.unit, overflow: TextOverflow.ellipsis)),
             Expanded(
               flex: 1,
               child: consumption.floor != null
@@ -387,8 +553,8 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
           MadDropdownMenuButton(
             items: [
               MadMenuItem(label: 'View Details', icon: LucideIcons.eye, onTap: () {}),
-              MadMenuItem(label: 'Edit', icon: LucideIcons.pencil, onTap: () {}),
-              MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () {}),
+              MadMenuItem(label: 'Edit', icon: LucideIcons.pencil, onTap: () => _showEditConsumptionDialog(consumption)),
+              MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _confirmDeleteConsumption(consumption)),
             ],
           ),
         ],
@@ -438,6 +604,142 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
         ),
       ),
     );
+  }
+
+  void _showEditConsumptionDialog(Consumption consumption) {
+    const materialOptions = [
+      MadSelectOption(value: 'cement', label: 'Cement OPC 53'),
+      MadSelectOption(value: 'pvc', label: 'PVC Pipe 4"'),
+      MadSelectOption(value: 'sand', label: 'River Sand'),
+    ];
+    const unitOptions = [
+      MadSelectOption(value: 'bags', label: 'Bags'),
+      MadSelectOption(value: 'meters', label: 'Meters'),
+      MadSelectOption(value: 'kg', label: 'KG'),
+      MadSelectOption(value: 'liters', label: 'Liters'),
+    ];
+    const floorOptions = [
+      MadSelectOption(value: 'ground', label: 'Ground Floor'),
+      MadSelectOption(value: '1st', label: '1st Floor'),
+      MadSelectOption(value: '2nd', label: '2nd Floor'),
+      MadSelectOption(value: '3rd', label: '3rd Floor'),
+    ];
+    String materialValue = materialOptions.any((o) => o.label == consumption.material)
+        ? materialOptions.firstWhere((o) => o.label == consumption.material).value
+        : materialOptions.first.value;
+    String unitValue = unitOptions.any((o) => o.label == consumption.unit || o.value == consumption.unit)
+        ? unitOptions.where((o) => o.label == consumption.unit || o.value == consumption.unit).first.value
+        : unitOptions.first.value;
+    String? floorValue = consumption.floor;
+    final quantityController = TextEditingController(text: consumption.quantity.toStringAsFixed(0));
+    final dateController = TextEditingController(text: consumption.date ?? '');
+
+    MadFormDialog.show(
+      context: context,
+      title: 'Edit Consumption',
+      maxWidth: 500,
+      content: StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              MadSelect<String>(
+                labelText: 'Material',
+                placeholder: 'Select material',
+                value: materialValue,
+                searchable: true,
+                options: materialOptions,
+                onChanged: (value) => setDialogState(() => materialValue = value ?? materialValue),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: MadInput(
+                      labelText: 'Quantity',
+                      hintText: 'Enter quantity',
+                      controller: quantityController,
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: MadSelect<String>(
+                      labelText: 'Unit',
+                      placeholder: 'Select',
+                      value: unitValue,
+                      options: unitOptions,
+                      onChanged: (value) => setDialogState(() => unitValue = value ?? unitValue),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              MadSelect<String>(
+                labelText: 'Floor',
+                placeholder: 'Select floor',
+                value: floorValue,
+                options: floorOptions,
+                onChanged: (value) => setDialogState(() => floorValue = value),
+              ),
+              const SizedBox(height: 16),
+              MadInput(
+                labelText: 'Date',
+                hintText: 'Date',
+                controller: dateController,
+              ),
+            ],
+          );
+        },
+      ),
+      actions: [
+        MadButton(
+          text: 'Cancel',
+          variant: ButtonVariant.outline,
+          onPressed: () => Navigator.pop(context),
+        ),
+        MadButton(
+          text: 'Save',
+          onPressed: () {
+            if (!mounted) return;
+            final quantity = double.tryParse(quantityController.text) ?? consumption.quantity;
+            final materialLabel = materialOptions.firstWhere((o) => o.value == materialValue, orElse: () => materialOptions.first).label;
+            final unitLabel = unitOptions.firstWhere((o) => o.value == unitValue, orElse: () => unitOptions.first).label;
+            setState(() {
+              final i = _consumptions.indexWhere((c) => c.id == consumption.id);
+              if (i >= 0) {
+                _consumptions[i] = Consumption(
+                  id: consumption.id,
+                  material: materialLabel,
+                  quantity: quantity,
+                  unit: unitLabel,
+                  date: dateController.text.isEmpty ? null : dateController.text,
+                  floor: floorValue,
+                  remarks: consumption.remarks,
+                );
+              }
+            });
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Consumption updated')));
+          },
+        ),
+      ],
+    );
+  }
+
+  void _confirmDeleteConsumption(Consumption consumption) {
+    MadDialog.confirm(
+      context: context,
+      title: 'Delete Consumption',
+      description: 'Are you sure you want to delete this consumption record (${consumption.material})? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      destructive: true,
+    ).then((confirmed) {
+      if (confirmed != true || !mounted) return;
+      setState(() => _consumptions.removeWhere((c) => c.id == consumption.id));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Consumption record deleted')));
+    });
   }
 
   void _showConsumptionDialog() {

@@ -7,6 +7,8 @@ import '../services/api_client.dart';
 import '../models/stock_area.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../utils/responsive.dart';
+import '../demo_data/remaining_modules_demo.dart';
 
 /// Returns management page matching React's Returns page
 class ReturnsPage extends StatefulWidget {
@@ -17,8 +19,11 @@ class ReturnsPage extends StatefulWidget {
 }
 
 class _ReturnsPageState extends State<ReturnsPage> {
-  bool _isLoading = true;
-  List<Return> _returns = [];
+  // START WITH DEMO DATA – never show blank
+  bool _isLoading = false;
+  List<Return> _returns = ReturnsDemo.returns
+      .map((e) => Return.fromJson(e))
+      .toList();
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -28,6 +33,7 @@ class _ReturnsPageState extends State<ReturnsPage> {
   @override
   void initState() {
     super.initState();
+    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadReturns();
     });
@@ -39,27 +45,46 @@ class _ReturnsPageState extends State<ReturnsPage> {
     super.dispose();
   }
 
+  void _seedDemoData() {
+    debugPrint('[Returns] API unavailable – falling back to demo data');
+    setState(() {
+      _returns = ReturnsDemo.returns.map((e) => Return.fromJson(e)).toList();
+      _isLoading = false;
+    });
+  }
+
   Future<void> _loadReturns() async {
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
 
     if (projectId.isEmpty) {
-      setState(() => _isLoading = false);
+      _seedDemoData();
       return;
     }
 
-    final result = await ApiClient.getReturns(projectId);
+    try {
+      final result = await ApiClient.getReturns(projectId);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (result['success'] == true) {
-      final data = result['data'] as List;
-      setState(() {
-        _returns = data.map((e) => Return.fromJson(e)).toList();
-        _isLoading = false;
-      });
-    } else {
-      setState(() => _isLoading = false);
+      if (result['success'] == true) {
+        final data = result['data'] as List;
+        final loaded = data.map((e) => Return.fromJson(e)).toList();
+        if (loaded.isEmpty) {
+          _seedDemoData();
+        } else {
+          setState(() {
+            _returns = loaded;
+            _isLoading = false;
+          });
+        }
+      } else {
+        _seedDemoData();
+      }
+    } catch (e) {
+      debugPrint('[Returns] API error: $e – falling back to demo data');
+      if (!mounted) return;
+      _seedDemoData();
     }
   }
 
@@ -91,11 +116,24 @@ class _ReturnsPageState extends State<ReturnsPage> {
 
   int get _totalPages => (_filteredReturns.length / _itemsPerPage).ceil();
 
+  static const _warehouses = ['Main Warehouse', 'Secondary Store', 'Overflow Storage'];
+  static const _zonesByWarehouse = <String, List<String>>{
+    'Main Warehouse': ['Zone A', 'Zone B'],
+    'Secondary Store': ['Zone C'],
+    'Overflow Storage': ['Zone D'],
+  };
+
+  int get _processedTodayCount {
+    final today = DateTime.now();
+    final todayStr = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    return _returns.where((r) => r.status == 'Approved' && r.date == todayStr).length;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 768;
+    final responsive = Responsive(context);
+    final isMobile = responsive.isMobile;
 
     return ProtectedRoute(
       title: 'Returns',
@@ -114,7 +152,7 @@ class _ReturnsPageState extends State<ReturnsPage> {
                     Text(
                       'Returns',
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: responsive.value(mobile: 22, tablet: 26, desktop: 28),
                         fontWeight: FontWeight.bold,
                         color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
                       ),
@@ -139,22 +177,13 @@ class _ReturnsPageState extends State<ReturnsPage> {
           ),
           const SizedBox(height: 24),
 
-          // Stats cards
+          // Stats cards: Pending Inspection, Processed Today, Rejected Returns
           if (!isMobile)
             Row(
               children: [
                 Expanded(
                   child: StatCard(
-                    title: 'Total Returns',
-                    value: _returns.length.toString(),
-                    icon: LucideIcons.packageX,
-                    iconColor: AppTheme.primaryColor,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: StatCard(
-                    title: 'Pending',
+                    title: 'Pending Inspection',
                     value: _returns.where((r) => r.status == 'Pending').length.toString(),
                     icon: LucideIcons.clock,
                     iconColor: const Color(0xFFF59E0B),
@@ -163,8 +192,8 @@ class _ReturnsPageState extends State<ReturnsPage> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: StatCard(
-                    title: 'Processed',
-                    value: _returns.where((r) => r.status == 'Processed').length.toString(),
+                    title: 'Processed Today',
+                    value: _processedTodayCount.toString(),
                     icon: LucideIcons.circleCheck,
                     iconColor: const Color(0xFF22C55E),
                   ),
@@ -172,7 +201,7 @@ class _ReturnsPageState extends State<ReturnsPage> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: StatCard(
-                    title: 'Rejected',
+                    title: 'Rejected Returns',
                     value: _returns.where((r) => r.status == 'Rejected').length.toString(),
                     icon: LucideIcons.circleX,
                     iconColor: AppTheme.lightDestructive,
@@ -203,14 +232,14 @@ class _ReturnsPageState extends State<ReturnsPage> {
                 ),
               ),
               SizedBox(
-                width: 150,
+                width: isMobile ? double.infinity : 150,
                 child: MadSelect<String>(
                   value: _statusFilter,
                   placeholder: 'All Status',
                   clearable: true,
                   options: const [
                     MadSelectOption(value: 'Pending', label: 'Pending'),
-                    MadSelectOption(value: 'Processed', label: 'Processed'),
+                    MadSelectOption(value: 'Approved', label: 'Approved'),
                     MadSelectOption(value: 'Rejected', label: 'Rejected'),
                   ],
                   onChanged: (value) => setState(() {
@@ -343,7 +372,7 @@ class _ReturnsPageState extends State<ReturnsPage> {
   Widget _buildTableRow(Return returnItem, bool isDark, bool isMobile) {
     BadgeVariant statusVariant;
     switch (returnItem.status) {
-      case 'Processed':
+      case 'Approved':
         statusVariant = BadgeVariant.default_;
         break;
       case 'Pending':
@@ -364,6 +393,7 @@ class _ReturnsPageState extends State<ReturnsPage> {
             flex: 1,
             child: Text(
               returnItem.date ?? '-',
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
               ),
@@ -374,7 +404,7 @@ class _ReturnsPageState extends State<ReturnsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(returnItem.material, style: const TextStyle(fontWeight: FontWeight.w500)),
+                Text(returnItem.material, style: const TextStyle(fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
                 if (isMobile)
                   Text(
                     '${returnItem.quantity.toStringAsFixed(0)} - ${returnItem.reason}',
@@ -392,6 +422,7 @@ class _ReturnsPageState extends State<ReturnsPage> {
               flex: 1,
               child: Text(
                 returnItem.quantity.toStringAsFixed(0),
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
@@ -409,12 +440,10 @@ class _ReturnsPageState extends State<ReturnsPage> {
           ),
           MadDropdownMenuButton(
             items: [
-              MadMenuItem(label: 'View Details', icon: LucideIcons.eye, onTap: () {}),
-              if (returnItem.status == 'Pending') ...[
-                MadMenuItem(label: 'Approve', icon: LucideIcons.circleCheck, onTap: () {}),
-                MadMenuItem(label: 'Reject', icon: LucideIcons.circleX, destructive: true, onTap: () {}),
-              ],
-              MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () {}),
+              MadMenuItem(label: 'View Details', icon: LucideIcons.eye, onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Return: ${returnItem.material}')))),
+              if (returnItem.status == 'Pending')
+                MadMenuItem(label: 'Process Return', icon: LucideIcons.circleCheck, onTap: () => _showInspectionDialog(returnItem)),
+              MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _confirmDeleteReturn(returnItem)),
             ],
           ),
         ],
@@ -464,6 +493,140 @@ class _ReturnsPageState extends State<ReturnsPage> {
         ),
       ),
     );
+  }
+
+  void _showInspectionDialog(Return returnItem) {
+    final notesController = TextEditingController();
+    bool approved = true;
+    String? selectedWarehouse;
+    String? selectedZone;
+
+    MadFormDialog.show(
+      context: context,
+      title: 'Inspection',
+      maxWidth: 520,
+      content: StatefulBuilder(
+        builder: (context, setDialogState) {
+          final zoneOptions = selectedWarehouse != null
+              ? (_zonesByWarehouse[selectedWarehouse] ?? [])
+                  .map((z) => MadSelectOption(value: z, label: z))
+                  .toList()
+              : <MadSelectOption<String>>[];
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MadTextarea(
+                controller: notesController,
+                labelText: 'Inspection Notes',
+                hintText: 'Enter inspection notes...',
+                minLines: 3,
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Decision',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? AppTheme.darkForeground
+                      : AppTheme.lightForeground,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: MadButton(
+                      text: 'Approve',
+                      variant: approved ? ButtonVariant.primary : ButtonVariant.outline,
+                      onPressed: () => setDialogState(() => approved = true),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: MadButton(
+                      text: 'Reject',
+                      variant: !approved ? ButtonVariant.destructive : ButtonVariant.outline,
+                      onPressed: () => setDialogState(() => approved = false),
+                    ),
+                  ),
+                ],
+              ),
+              if (approved) ...[
+                const SizedBox(height: 20),
+                MadSelect<String>(
+                  labelText: 'Target Warehouse',
+                  value: selectedWarehouse,
+                  placeholder: 'Select warehouse',
+                  options: _warehouses.map((w) => MadSelectOption(value: w, label: w)).toList(),
+                  onChanged: (value) => setDialogState(() {
+                    selectedWarehouse = value;
+                    selectedZone = null;
+                  }),
+                ),
+                const SizedBox(height: 16),
+                MadSelect<String>(
+                  labelText: 'Target Zone',
+                  value: selectedZone,
+                  placeholder: 'Select zone',
+                  options: zoneOptions,
+                  onChanged: (value) => setDialogState(() => selectedZone = value),
+                ),
+              ],
+            ],
+          );
+        },
+      ),
+      actions: [
+        MadButton(
+          text: 'Cancel',
+          variant: ButtonVariant.outline,
+          onPressed: () => Navigator.pop(context),
+        ),
+        MadButton(
+          text: 'Complete Inspection',
+          onPressed: () {
+            final notes = notesController.text.trim();
+            final i = _returns.indexWhere((r) => r.id == returnItem.id);
+            if (i >= 0) {
+              final r = _returns[i];
+              final todayStr = '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}';
+              setState(() {
+                _returns[i] = r.copyWith(
+                  status: approved ? 'Approved' : 'Rejected',
+                  date: todayStr,
+                  inspectionNotes: notes.isEmpty ? null : notes,
+                  targetWarehouse: approved ? selectedWarehouse : null,
+                  targetZone: approved ? selectedZone : null,
+                );
+              });
+            }
+            Navigator.pop(context);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(approved ? 'Return approved' : 'Return rejected')),
+              );
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  void _confirmDeleteReturn(Return returnItem) {
+    MadDialog.confirm(
+      context: context,
+      title: 'Delete Return',
+      description: 'Are you sure you want to delete this return (${returnItem.material})? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      destructive: true,
+    ).then((confirmed) {
+      if (confirmed != true || !mounted) return;
+      setState(() => _returns.removeWhere((r) => r.id == returnItem.id));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Return deleted')));
+    });
   }
 
   void _showReturnDialog() {

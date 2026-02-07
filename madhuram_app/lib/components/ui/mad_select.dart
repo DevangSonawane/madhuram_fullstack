@@ -352,6 +352,8 @@ class _SelectDropdown<T> extends StatelessWidget {
                               Expanded(
                                 child: Text(
                                   option.label,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: option.disabled

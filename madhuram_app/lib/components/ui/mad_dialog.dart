@@ -198,6 +198,10 @@ class MadDialog extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final responsive = Responsive(context);
+    final effectiveMaxWidth = maxWidth ?? responsive.dialogWidth();
+    final constrainedMaxWidth = effectiveMaxWidth > responsive.screenWidth * 0.9
+        ? responsive.screenWidth * 0.9
+        : effectiveMaxWidth;
 
     return Dialog(
       backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
@@ -210,7 +214,7 @@ class MadDialog extends StatelessWidget {
       ),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: maxWidth ?? responsive.dialogWidth(),
+          maxWidth: constrainedMaxWidth,
           minWidth: 280,
         ),
         child: Padding(
@@ -517,6 +521,10 @@ class MadFormDialog extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final responsive = Responsive(context);
+    final effectiveMaxWidth = maxWidth ?? responsive.dialogWidth(large: true);
+    final constrainedMaxWidth = effectiveMaxWidth > responsive.screenWidth * 0.9
+        ? responsive.screenWidth * 0.9
+        : effectiveMaxWidth;
 
     return Dialog(
       backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
@@ -529,7 +537,7 @@ class MadFormDialog extends StatelessWidget {
       ),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: maxWidth ?? responsive.dialogWidth(large: true),
+          maxWidth: constrainedMaxWidth,
           maxHeight: MediaQuery.of(context).size.height * 0.9,
         ),
         child: Column(

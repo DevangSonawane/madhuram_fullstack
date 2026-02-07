@@ -100,6 +100,26 @@ class Responsive {
 
   /// Whether to use full screen dialogs
   bool get useFullScreenDialogs => isMobile;
+
+  /// Responsive font size helper
+  double fontSize({required double base}) {
+    return value<double>(mobile: base * 0.85, tablet: base, desktop: base);
+  }
+
+  /// Responsive form input width
+  double get formInputWidth {
+    if (isMobile) return screenWidth * 0.9;
+    if (isTablet) return 300;
+    return 320;
+  }
+
+  /// Responsive table needs horizontal scroll
+  bool get needsHorizontalScroll => isMobile;
+
+  /// Responsive card padding
+  EdgeInsets get cardPadding {
+    return EdgeInsets.all(value<double>(mobile: 12, tablet: 16, desktop: 20));
+  }
 }
 
 /// Extension for easy responsive access
@@ -257,6 +277,41 @@ class ResponsiveWrap extends StatelessWidget {
           }).toList(),
         );
       },
+    );
+  }
+}
+
+/// Responsive padding widget for consistent spacing across devices
+class ResponsivePadding extends StatelessWidget {
+  final Widget child;
+  final double? mobile;
+  final double? tablet;
+  final double? desktop;
+  final bool horizontal;
+
+  const ResponsivePadding({
+    super.key,
+    required this.child,
+    this.mobile = 16.0,
+    this.tablet = 24.0,
+    this.desktop = 32.0,
+    this.horizontal = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final responsive = Responsive(context);
+    final padding = responsive.value<double>(
+      mobile: mobile!,
+      tablet: tablet,
+      desktop: desktop,
+    );
+
+    return Padding(
+      padding: horizontal
+          ? EdgeInsets.symmetric(horizontal: padding)
+          : EdgeInsets.all(padding),
+      child: child,
     );
   }
 }

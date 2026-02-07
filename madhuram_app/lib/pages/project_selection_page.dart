@@ -1,17 +1,17 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/app_theme.dart';
 import '../store/app_state.dart';
 import '../store/project_actions.dart';
 import '../services/api_client.dart';
 import '../services/auth_storage.dart';
-import '../components/ui/mad_card.dart';
-import '../components/ui/mad_button.dart';
-import '../components/ui/mad_badge.dart';
-import '../components/ui/mad_input.dart';
+import '../components/ui/components.dart';
 import '../utils/responsive.dart';
 import '../models/project.dart';
+import '../demo_data/additional_modules_demo.dart';
 
 /// Project Selection page - Responsive version
 class ProjectSelectionPage extends StatefulWidget {
@@ -22,16 +22,19 @@ class ProjectSelectionPage extends StatefulWidget {
 }
 
 class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
-  bool _isLoading = true;
+  // START WITH DEMO DATA – never show blank
+  bool _isLoading = false;
   String? _error;
   String _searchQuery = '';
-  List<Project> _projects = [];
+  List<Project> _projects = ProjectsDemo.projects
+      .map((e) => Project.fromJson(e))
+      .toList();
   final _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    // Use addPostFrameCallback to ensure context is ready
+    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAuthAndLoadProjects();
     });
@@ -60,11 +63,8 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
   Future<void> _loadProjects() async {
     if (!mounted) return;
     
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
+    // Don't set _isLoading = true; demo data is already visible.
+    // Just silently try the API in background.
     final store = StoreProvider.of<AppState>(context);
     store.dispatch(FetchProjectsStart());
 
@@ -91,20 +91,20 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
           _error = null;
         });
       } else {
-        final errorMsg = result['error']?.toString() ?? 'Failed to load projects';
-        store.dispatch(FetchProjectsFailure(errorMsg));
+        debugPrint('[ProjectSelection] API returned failure – keeping demo data');
+        store.dispatch(FetchProjectsFailure('API failure'));
         setState(() {
           _isLoading = false;
-          _error = errorMsg;
+          _error = null; // Keep demo data visible, don't show error
         });
       }
     } catch (e) {
+      debugPrint('[ProjectSelection] API error: $e – keeping demo data');
       if (!mounted) return;
-      final errorMsg = 'Error loading projects: $e';
-      store.dispatch(FetchProjectsFailure(errorMsg));
+      store.dispatch(FetchProjectsFailure('$e'));
       setState(() {
         _isLoading = false;
-        _error = errorMsg;
+        _error = null; // Keep demo data visible, don't show error
       });
     }
   }
@@ -232,6 +232,15 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                       color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Upload a work order PDF to auto-fill project details.',
+                    style: TextStyle(
+                      fontSize: responsive.value(mobile: 12, tablet: 13, desktop: 13),
+                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
                   SizedBox(height: responsive.value(mobile: 16, tablet: 20, desktop: 24)),
                   // Search
                   MadSearchInput(
@@ -250,7 +259,7 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
 
             // Projects grid or loading/error state
             Expanded(
-              child: _buildContent(isDark, responsive),
+              child: _buildContent(isDark, responsive, vm.isAdmin),
             ),
           ],
         ),
@@ -258,7 +267,7 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
     );
   }
 
-  Widget _buildContent(bool isDark, Responsive responsive) {
+  Widget _buildContent(bool isDark, Responsive responsive, bool isAdmin) {
     if (_isLoading) {
       return const Center(
         child: Column(
@@ -334,13 +343,13 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
         ),
         itemCount: _filteredProjects.length,
         itemBuilder: (context, index) {
-          return _buildProjectCard(_filteredProjects[index], isDark, responsive);
+          return _buildProjectCard(_filteredProjects[index], isDark, responsive, isAdmin);
         },
       ),
     );
   }
 
-  Widget _buildProjectCard(Project project, bool isDark, Responsive responsive) {
+  Widget _buildProjectCard(Project project, bool isDark, Responsive responsive, bool isAdmin) {
     return MadCard(
       hoverable: true,
       onTap: () => _selectProject(project),
@@ -365,7 +374,24 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                StatusBadge(status: project.status ?? 'Planning'),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isAdmin)
+                      IconButton(
+                        icon: Icon(
+                          LucideIcons.trash2,
+                          size: 18,
+                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                        ),
+                        onPressed: () => _showDeleteProjectConfirm(project),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      ),
+                    const SizedBox(width: 4),
+                    StatusBadge(status: project.status ?? 'Planning'),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 4),
@@ -494,54 +520,219 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
     );
   }
 
+  void _showDeleteProjectConfirm(Project project) {
+    MadDialog.confirm(
+      context: context,
+      title: 'Delete Project',
+      description: 'Are you sure you want to delete "${project.name}"? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      destructive: true,
+    ).then((confirmed) async {
+      if (!confirmed || project.id.isEmpty || !mounted) return;
+      final result = await ApiClient.deleteProject(project.id);
+      if (!mounted) return;
+      if (result['success'] == true) {
+        _loadProjects();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text((result['error'] ?? 'Delete failed').toString()),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    });
+  }
+
   void _showCreateProjectDialog() {
     final nameController = TextEditingController();
     final clientController = TextEditingController();
     final locationController = TextEditingController();
 
-    showDialog(
+    File? workOrderFile;
+    File? masFile;
+    String? workOrderFileName;
+    String? masFileName;
+
+    MadFormDialog.show(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create New Project'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              MadInput(
-                controller: nameController,
-                labelText: 'Project Name',
-                hintText: 'Enter project name',
-              ),
-              const SizedBox(height: 16),
-              MadInput(
-                controller: clientController,
-                labelText: 'Client Name',
-                hintText: 'Enter client name',
-              ),
-              const SizedBox(height: 16),
-              MadInput(
-                controller: locationController,
-                labelText: 'Location',
-                hintText: 'Enter location',
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              // Refresh projects after creation
-              _loadProjects();
-            },
-            child: const Text('Create'),
-          ),
-        ],
+      title: 'Create New Project',
+      maxWidth: 520,
+      content: StatefulBuilder(
+        builder: (context, setDialogState) {
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MadInput(
+                  controller: nameController,
+                  labelText: 'Project Name',
+                  hintText: 'Enter project name',
+                ),
+                const SizedBox(height: 16),
+                MadInput(
+                  controller: clientController,
+                  labelText: 'Client Name',
+                  hintText: 'Enter client name',
+                ),
+                const SizedBox(height: 16),
+                MadInput(
+                  controller: locationController,
+                  labelText: 'Location',
+                  hintText: 'Enter location',
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Work Order File (PDF)',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    MadButton(
+                      icon: LucideIcons.upload,
+                      text: workOrderFileName ?? 'Choose PDF',
+                      variant: ButtonVariant.outline,
+                      size: ButtonSize.sm,
+                      onPressed: () async {
+                        final result = await FilePicker.platform.pickFiles(
+                          type: FileType.custom,
+                          allowedExtensions: ['pdf'],
+                          withData: false,
+                        );
+                        if (result != null && result.files.isNotEmpty && result.files.single.path != null) {
+                          workOrderFile = File(result.files.single.path!);
+                          workOrderFileName = result.files.single.name;
+                          setDialogState(() {});
+                        }
+                      },
+                    ),
+                    if (workOrderFileName != null) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          workOrderFileName!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? AppTheme.darkMutedForeground
+                                : AppTheme.lightMutedForeground,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'MAS File',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    MadButton(
+                      icon: LucideIcons.upload,
+                      text: masFileName ?? 'Choose File',
+                      variant: ButtonVariant.outline,
+                      size: ButtonSize.sm,
+                      onPressed: () async {
+                        final result = await FilePicker.platform.pickFiles(
+                          type: FileType.any,
+                          withData: false,
+                        );
+                        if (result != null && result.files.isNotEmpty && result.files.single.path != null) {
+                          masFile = File(result.files.single.path!);
+                          masFileName = result.files.single.name;
+                          setDialogState(() {});
+                        }
+                      },
+                    ),
+                    if (masFileName != null) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          masFileName!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? AppTheme.darkMutedForeground
+                                : AppTheme.lightMutedForeground,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
       ),
+      actions: [
+        MadButton(
+          text: 'Cancel',
+          variant: ButtonVariant.outline,
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        MadButton(
+          text: 'Create',
+          onPressed: () async {
+            final projectName = nameController.text.trim();
+            final clientName = clientController.text.trim();
+            final location = locationController.text.trim();
+            if (projectName.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Please enter project name')),
+              );
+              return;
+            }
+            Navigator.of(context).pop();
+
+            final projectData = {
+              'project_name': projectName,
+              'client_name': clientName,
+              'location': location,
+              'project_startdate': '',
+              'floor': '',
+              'estimate_value': '',
+              'wo_number': '',
+              'work_order_information': '',
+            };
+
+            Map<String, dynamic> result;
+            if (workOrderFile != null || masFile != null) {
+              result = await ApiClient.createProjectWithFiles(
+                projectData: projectData,
+                workOrderFile: workOrderFile,
+                masFile: masFile,
+              );
+            } else {
+              result = await ApiClient.createProject({
+                'project_name': projectName,
+                'client_name': clientName,
+                'location': location,
+              });
+            }
+
+            if (!mounted) return;
+            if (result['success'] == true) {
+              await _loadProjects();
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text((result['error'] ?? 'Failed to create project').toString()),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          },
+        ),
+      ],
     );
   }
 }

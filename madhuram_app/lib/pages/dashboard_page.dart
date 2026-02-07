@@ -7,9 +7,11 @@ import '../store/app_state.dart';
 import '../services/api_client.dart';
 import '../components/ui/mad_card.dart';
 import '../components/ui/mad_button.dart';
+import '../components/ui/mad_badge.dart';
 import '../components/ui/stat_card.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
+import '../demo_data/dashboard_demo.dart';
 
 /// Dashboard page matching React's Dashboard.jsx - Responsive version
 class DashboardPage extends StatefulWidget {
@@ -20,120 +22,147 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  bool _isLoading = true;
-  
-  // Dashboard data from API
   List<Map<String, dynamic>> _consumptionData = [];
   List<Map<String, dynamic>> _recentActivity = [];
   Map<String, dynamic> _stats = {};
+  bool _isLoading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadDashboardData();
-    });
+    _loadDashboardData();
   }
 
   Future<void> _loadDashboardData() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
-    
+
     if (projectId.isEmpty) {
-      setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        _stats = DashboardDemo.stats;
+        _consumptionData = DashboardDemo.consumptionChart;
+        _recentActivity = DashboardDemo.recentActivity;
+        _isLoading = false;
+        _error = null;
+      });
       return;
     }
 
-    final result = await ApiClient.getDashboardStats(projectId);
+    try {
+      final result = await ApiClient.getDashboardStats(projectId);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (result['success'] == true) {
-      final data = result['data'] as Map<String, dynamic>;
+      if (result['success'] == true) {
+        final data = result['data'] as Map<String, dynamic>;
+        setState(() {
+          _stats = {
+            'total_value': data['total_value'] ?? '₹0',
+            'total_value_change': (data['total_value_change'] as num?)?.toDouble() ?? 0.0,
+            'active_orders': data['active_orders']?.toString() ?? '0',
+            'active_orders_change': (data['active_orders_change'] as num?)?.toDouble() ?? 0.0,
+            'low_stock_items': data['low_stock_items']?.toString() ?? '0',
+            'total_materials': data['total_materials']?.toString() ?? '0',
+            'warehouses': data['warehouses'] ?? 0,
+          };
+
+          final chartData = data['consumption_chart'] as List<dynamic>? ?? [];
+          _consumptionData = chartData.map((e) => <String, dynamic>{
+            'name': e['name'] ?? '',
+            'total': (e['total'] as num?)?.toInt() ?? 0,
+          }).toList();
+
+          final activityData = data['recent_activity'] as List<dynamic>? ?? [];
+          _recentActivity = activityData.map((e) => <String, dynamic>{
+            'user': e['user'] ?? 'Unknown',
+            'action': e['action'] ?? '',
+            'time': e['time'] ?? '',
+            'status': e['status'] ?? 'info',
+            'initials': e['initials'] ?? 'U',
+          }).toList();
+
+          if (_consumptionData.isEmpty && _recentActivity.isEmpty) {
+            _stats = DashboardDemo.stats;
+            _consumptionData = DashboardDemo.consumptionChart;
+            _recentActivity = DashboardDemo.recentActivity;
+          }
+          _isLoading = false;
+          _error = null;
+        });
+      } else {
+        if (!mounted) return;
+        setState(() {
+          _stats = DashboardDemo.stats;
+          _consumptionData = DashboardDemo.consumptionChart;
+          _recentActivity = DashboardDemo.recentActivity;
+          _isLoading = false;
+          _error = result['error']?.toString() ?? 'Failed to load dashboard';
+        });
+      }
+    } catch (e) {
+      debugPrint('[Dashboard] API error: $e – falling back to demo data');
+      if (!mounted) return;
       setState(() {
-        _stats = {
-          'total_value': data['total_value'] ?? '₹0',
-          'total_value_change': (data['total_value_change'] as num?)?.toDouble() ?? 0.0,
-          'active_orders': data['active_orders']?.toString() ?? '0',
-          'active_orders_change': (data['active_orders_change'] as num?)?.toDouble() ?? 0.0,
-          'low_stock_items': data['low_stock_items']?.toString() ?? '0',
-          'total_materials': data['total_materials']?.toString() ?? '0',
-          'warehouses': data['warehouses'] ?? 0,
-        };
-        
-        final chartData = data['consumption_chart'] as List<dynamic>? ?? [];
-        _consumptionData = chartData.map((e) => <String, dynamic>{
-          'name': e['name'] ?? '',
-          'total': (e['total'] as num?)?.toInt() ?? 0,
-        }).toList();
-        
-        final activityData = data['recent_activity'] as List<dynamic>? ?? [];
-        _recentActivity = activityData.map((e) => <String, dynamic>{
-          'user': e['user'] ?? 'Unknown',
-          'action': e['action'] ?? '',
-          'time': e['time'] ?? '',
-          'status': e['status'] ?? 'info',
-          'initials': e['initials'] ?? 'U',
-        }).toList();
-        
+        _stats = DashboardDemo.stats;
+        _consumptionData = DashboardDemo.consumptionChart;
+        _recentActivity = DashboardDemo.recentActivity;
         _isLoading = false;
-      });
-    } else {
-      setState(() {
-        _stats = {
-          'total_value': '₹0',
-          'total_value_change': 0.0,
-          'active_orders': '0',
-          'active_orders_change': 0.0,
-          'low_stock_items': '0',
-          'total_materials': '0',
-          'warehouses': 0,
-        };
-        _consumptionData = [];
-        _recentActivity = [];
-        _isLoading = false;
+        _error = e.toString();
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // ProtectedRoute (MainLayout) already handles auth/project checks.
+    // No redundant checks or bare Scaffolds here.
     return StoreConnector<AppState, _DashboardViewModel>(
       converter: (store) => _DashboardViewModel(
         isAuthenticated: store.state.auth.isAuthenticated,
         selectedProject: store.state.project.selectedProject,
       ),
       builder: (context, vm) {
-        if (!vm.isAuthenticated) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            Navigator.pushReplacementNamed(context, '/login');
-          });
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (vm.selectedProject == null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            Navigator.pushReplacementNamed(context, '/projects');
-          });
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (_isLoading) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
         return _buildDashboard(context, vm);
       },
     );
   }
 
   Widget _buildDashboard(BuildContext context, _DashboardViewModel vm) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (_isLoading) {
+      return ProtectedRoute(
+        title: 'Dashboard',
+        route: '/dashboard',
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null) {
+      return ProtectedRoute(
+        title: 'Dashboard',
+        route: '/dashboard',
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
+              const SizedBox(height: 16),
+              Text(_error!, style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
+              const SizedBox(height: 16),
+              ElevatedButton(onPressed: _loadDashboardData, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      );
+    }
+
     final List<Map<String, dynamic>> consumptionData = _consumptionData.isNotEmpty ? _consumptionData : <Map<String, dynamic>>[
       {'name': 'Jan', 'total': 0},
       {'name': 'Feb', 'total': 0},
@@ -151,8 +180,7 @@ class _DashboardPageState extends State<DashboardPage> {
       'total_materials': '0',
       'warehouses': 0,
     };
-    
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     final responsive = Responsive(context);
 
     return ProtectedRoute(
@@ -244,7 +272,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     variant: ButtonVariant.outline,
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Export started...')),
+                        const SnackBar(content: Text('Export feature coming soon')),
                       );
                     },
                   ),
@@ -271,7 +299,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   size: ButtonSize.sm,
                   onPressed: () {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Export started...')),
+                      const SnackBar(content: Text('Export feature coming soon')),
                     );
                   },
                 ),
@@ -448,6 +476,7 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildRecentActivity(bool isDark, List<Map<String, dynamic>> activityData, Responsive responsive) {
+    final items = activityData.take(responsive.isMobile ? 3 : 5).toList();
     return MadCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -456,6 +485,17 @@ class _DashboardPageState extends State<DashboardPage> {
           MadCardHeader(
             title: const MadCardTitle('Recent Activity'),
             subtitle: const MadCardDescription('Latest actions across the system.'),
+            action: GestureDetector(
+              onTap: () => Navigator.pushNamed(context, '/audit-logs'),
+              child: Text(
+                'View All',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.primaryColor,
+                ),
+              ),
+            ),
           ),
           MadCardContent(
             child: activityData.isEmpty
@@ -470,12 +510,39 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                   ),
                 )
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: activityData.take(responsive.isMobile ? 3 : 5).map((activity) {
-                    return _buildActivityItem(activity, isDark, responsive);
-                  }).toList(),
-                ),
+              : _buildTimeline(items, isDark, responsive),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Timeline-style list with vertical line connecting items
+  Widget _buildTimeline(List<Map<String, dynamic>> items, bool isDark, Responsive responsive) {
+    final avatarSize = responsive.value(mobile: 32.0, tablet: 36.0, desktop: 40.0);
+    final leftColumnWidth = avatarSize + 16;
+    final lineLeft = leftColumnWidth / 2 - 1;
+
+    return IntrinsicHeight(
+      child: Stack(
+        children: [
+          // Vertical line from top to bottom
+          Positioned(
+            left: lineLeft,
+            top: avatarSize / 2 + 8,
+            bottom: 8,
+            child: Container(
+              width: 2,
+              decoration: BoxDecoration(
+                color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.6),
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: items.map((activity) => _buildActivityItem(activity, isDark, responsive)).toList(),
           ),
         ],
       ),
@@ -484,49 +551,59 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildActivityItem(Map<String, dynamic> activity, bool isDark, Responsive responsive) {
     final status = activity['status'] as String? ?? 'info';
-    Color statusColor;
+    Color avatarColor;
+    BadgeVariant badgeVariant;
     switch (status) {
       case 'success':
-        statusColor = Colors.green;
+        avatarColor = Colors.green;
+        badgeVariant = BadgeVariant.success;
         break;
       case 'warning':
-        statusColor = Colors.orange;
+        avatarColor = Colors.amber;
+        badgeVariant = BadgeVariant.warning;
         break;
-      case 'error':
-        statusColor = Colors.red;
-        break;
+      case 'info':
       default:
-        statusColor = AppTheme.primaryColor;
+        avatarColor = Colors.blue;
+        badgeVariant = BadgeVariant.primary;
+        break;
     }
 
     final avatarSize = responsive.value(mobile: 32.0, tablet: 36.0, desktop: 40.0);
+    final initials = (activity['initials'] as String? ?? 'U').toUpperCase();
 
+    final leftColumnWidth = avatarSize + 16;
     return Padding(
       padding: EdgeInsets.only(bottom: responsive.value(mobile: 12, tablet: 14, desktop: 16)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: avatarSize,
-            height: avatarSize,
-            decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(avatarSize / 2),
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
-                ),
-              ],
-            ),
+          SizedBox(
+            width: leftColumnWidth,
             child: Center(
-              child: Text(
-                activity['initials'] ?? 'U',
-                style: TextStyle(
-                  fontSize: responsive.value(mobile: 10, tablet: 11, desktop: 12),
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+              child: Container(
+                width: avatarSize,
+                height: avatarSize,
+                decoration: BoxDecoration(
+                  color: avatarColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(avatarSize / 2),
+                  border: Border.all(color: avatarColor, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 4,
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    initials.length >= 2 ? initials.substring(0, 2) : initials,
+                    style: TextStyle(
+                      fontSize: responsive.value(mobile: 10, tablet: 11, desktop: 12),
+                      fontWeight: FontWeight.bold,
+                      color: avatarColor,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -547,6 +624,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(
                         child: Text(
@@ -558,14 +636,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      Text(
-                        activity['time'] ?? '',
-                        style: TextStyle(
-                          fontSize: responsive.value(mobile: 10, tablet: 11, desktop: 12),
-                          fontFamily: 'monospace',
-                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                        ),
-                      ),
+                      MadBadge(text: status, variant: badgeVariant),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -577,6 +648,15 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    activity['time'] ?? '',
+                    style: TextStyle(
+                      fontSize: responsive.value(mobile: 10, tablet: 11, desktop: 12),
+                      fontFamily: 'monospace',
+                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                    ),
                   ),
                 ],
               ),

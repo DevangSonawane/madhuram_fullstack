@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
+import '../utils/responsive.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/app_theme.dart';
 import '../store/app_state.dart';
@@ -7,6 +8,7 @@ import '../services/api_client.dart';
 import '../models/billing.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../demo_data/remaining_modules_demo.dart';
 
 /// Billing page with full implementation
 class BillingPageFull extends StatefulWidget {
@@ -16,8 +18,11 @@ class BillingPageFull extends StatefulWidget {
 }
 
 class _BillingPageFullState extends State<BillingPageFull> {
-  bool _isLoading = true;
-  List<Bill> _bills = [];
+  // START WITH DEMO DATA – never show blank
+  bool _isLoading = false;
+  List<Bill> _bills = BillingDemo.bills
+      .map((e) => Bill.fromJson(e))
+      .toList();
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -27,6 +32,7 @@ class _BillingPageFullState extends State<BillingPageFull> {
   @override
   void initState() {
     super.initState();
+    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadBills();
     });
@@ -38,22 +44,44 @@ class _BillingPageFullState extends State<BillingPageFull> {
     super.dispose();
   }
 
+  void _seedDemoData() {
+    debugPrint('[Billing] API unavailable – falling back to demo data');
+    setState(() {
+      _bills = BillingDemo.bills.map((e) => Bill.fromJson(e)).toList();
+      _isLoading = false;
+    });
+  }
+
   Future<void> _loadBills() async {
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
-    
+
     if (projectId.isEmpty) {
-      setState(() => _isLoading = false);
+      _seedDemoData();
       return;
     }
-    
-    final result = await ApiClient.getBillingByProject(projectId);
-    if (!mounted) return;
-    if (result['success'] == true) {
-      final data = result['data'] as List;
-      setState(() { _bills = data.map((e) => Bill.fromJson(e)).toList(); _isLoading = false; });
-    } else {
-      setState(() => _isLoading = false);
+
+    try {
+      final result = await ApiClient.getBillingByProject(projectId);
+      if (!mounted) return;
+      if (result['success'] == true) {
+        final data = result['data'] as List;
+        final loaded = data.map((e) => Bill.fromJson(e)).toList();
+        if (loaded.isEmpty) {
+          _seedDemoData();
+        } else {
+          setState(() {
+            _bills = loaded;
+            _isLoading = false;
+          });
+        }
+      } else {
+        _seedDemoData();
+      }
+    } catch (e) {
+      debugPrint('[Billing] API error: $e – falling back to demo data');
+      if (!mounted) return;
+      _seedDemoData();
     }
   }
 
@@ -80,7 +108,8 @@ class _BillingPageFullState extends State<BillingPageFull> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isMobile = MediaQuery.of(context).size.width < 768;
+    final responsive = Responsive(context);
+    final isMobile = responsive.isMobile;
 
     return ProtectedRoute(
       title: 'Billing',
@@ -88,9 +117,9 @@ class _BillingPageFullState extends State<BillingPageFull> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Billing', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
+            Text('Billing', style: TextStyle(fontSize: responsive.value(mobile: 22, tablet: 26, desktop: 28), fontWeight: FontWeight.bold, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground), overflow: TextOverflow.ellipsis),
             const SizedBox(height: 4),
-            Text('Manage invoices and payments', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
+            Text('Manage invoices and payments', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), overflow: TextOverflow.ellipsis),
           ])),
           if (!isMobile) MadButton(text: 'Create Invoice', icon: LucideIcons.plus, onPressed: () => _showInvoiceDialog()),
         ]),
@@ -144,14 +173,14 @@ class _BillingPageFullState extends State<BillingPageFull> {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Row(children: [
         Expanded(flex: 1, child: Text(bill.invoiceNo, style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
-        Expanded(flex: 1, child: Text(bill.amount ?? '-', style: const TextStyle(fontWeight: FontWeight.w500))),
+        Expanded(flex: 1, child: Text(bill.amount, style: const TextStyle(fontWeight: FontWeight.w500))),
         if (!isMobile) Expanded(flex: 1, child: Text(bill.date ?? '-', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground))),
         Expanded(flex: 1, child: MadBadge(text: bill.status, variant: variant)),
         MadDropdownMenuButton(items: [
           MadMenuItem(label: 'View Details', icon: LucideIcons.eye, onTap: () {}),
           MadMenuItem(label: 'Download PDF', icon: LucideIcons.download, onTap: () {}),
-          if (bill.status == 'Pending') MadMenuItem(label: 'Mark Paid', icon: LucideIcons.circleCheck, onTap: () {}),
-          MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () {}),
+          if (bill.status == 'Pending') MadMenuItem(label: 'Mark Paid', icon: LucideIcons.circleCheck, onTap: () => _markBillPaid(bill)),
+          MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _confirmDeleteBill(bill)),
         ]),
       ]),
     );
@@ -182,6 +211,42 @@ class _BillingPageFullState extends State<BillingPageFull> {
       const SizedBox(height: 24),
       MadButton(text: 'Create Invoice', icon: LucideIcons.plus, onPressed: () => _showInvoiceDialog()),
     ])));
+  }
+
+  void _markBillPaid(Bill bill) {
+    setState(() {
+      final i = _bills.indexWhere((b) => b.id == bill.id);
+      if (i >= 0) {
+        final b = _bills[i];
+        _bills[i] = Bill(
+          id: b.id,
+          projectId: b.projectId,
+          invoiceNo: b.invoiceNo,
+          amount: b.amount,
+          date: b.date,
+          status: 'Paid',
+          description: b.description,
+          vendor: b.vendor,
+          createdAt: b.createdAt,
+        );
+      }
+    });
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invoice marked as Paid')));
+  }
+
+  void _confirmDeleteBill(Bill bill) {
+    MadDialog.confirm(
+      context: context,
+      title: 'Delete Invoice',
+      description: 'Are you sure you want to delete invoice "${bill.invoiceNo}"? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      destructive: true,
+    ).then((confirmed) {
+      if (confirmed != true || !mounted) return;
+      setState(() => _bills.removeWhere((b) => b.id == bill.id));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invoice deleted')));
+    });
   }
 
   void _showInvoiceDialog() {

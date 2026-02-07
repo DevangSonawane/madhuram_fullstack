@@ -7,6 +7,7 @@ import '../store/app_state.dart';
 import '../services/api_client.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../utils/responsive.dart';
 
 /// Reports page
 class ReportsPageFull extends StatefulWidget {
@@ -48,7 +49,8 @@ class _ReportsPageFullState extends State<ReportsPageFull> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isMobile = MediaQuery.of(context).size.width < 768;
+    final responsive = Responsive(context);
+    final isMobile = responsive.isMobile;
 
     return ProtectedRoute(
       title: 'Reports',
@@ -57,9 +59,9 @@ class _ReportsPageFullState extends State<ReportsPageFull> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Reports & Analytics', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
+              Text('Reports & Analytics', style: TextStyle(fontSize: responsive.value<double>(mobile: 22, tablet: 26, desktop: 28), fontWeight: FontWeight.bold, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
               const SizedBox(height: 4),
-              Text('Project performance insights', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
+              Text('Project performance insights', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), overflow: TextOverflow.ellipsis, maxLines: 1),
             ])),
             if (!isMobile) Row(children: [
               MadButton(text: 'Export PDF', icon: LucideIcons.download, variant: ButtonVariant.outline, onPressed: () {}),
@@ -145,7 +147,7 @@ class _ReportsPageFullState extends State<ReportsPageFull> {
                         topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                         rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                       ),
-                      gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5), strokeWidth: 1)),
+                      gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withValues(alpha: 0.5), strokeWidth: 1)),
                       borderData: FlBorderData(show: false),
                     ),
                   ),
@@ -181,7 +183,7 @@ class _ReportsPageFullState extends State<ReportsPageFull> {
         Text('$percentage%', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color)),
       ]),
       const SizedBox(height: 6),
-      ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: percentage / 100, backgroundColor: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.5), valueColor: AlwaysStoppedAnimation<Color>(color), minHeight: 8)),
+      ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: percentage / 100, backgroundColor: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withValues(alpha: 0.5), valueColor: AlwaysStoppedAnimation<Color>(color), minHeight: 8)),
     ]);
   }
 
@@ -194,7 +196,7 @@ class _ReportsPageFullState extends State<ReportsPageFull> {
         child: Row(children: [
           Container(
             width: 48, height: 48,
-            decoration: BoxDecoration(color: AppTheme.primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(color: AppTheme.primaryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
             child: Icon(icon, color: AppTheme.primaryColor),
           ),
           const SizedBox(width: 16),

@@ -5,6 +5,8 @@ import '../services/api_client.dart';
 import '../models/vendor.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../utils/responsive.dart';
+import '../demo_data/vendors_demo.dart';
 
 /// Vendors page with full implementation
 class VendorsPageFull extends StatefulWidget {
@@ -15,8 +17,11 @@ class VendorsPageFull extends StatefulWidget {
 }
 
 class _VendorsPageFullState extends State<VendorsPageFull> {
-  bool _isLoading = true;
-  List<Vendor> _vendors = [];
+  // START WITH DEMO DATA – never show blank
+  bool _isLoading = false;
+  List<Vendor> _vendors = VendorsDemo.vendors
+      .map((e) => Vendor.fromJson(e))
+      .toList();
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -26,6 +31,7 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
   @override
   void initState() {
     super.initState();
+    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadVendors();
     });
@@ -37,19 +43,40 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
     super.dispose();
   }
 
+  /// Seed with demo data when API is unavailable
+  void _seedDemoData() {
+    debugPrint('[Vendors] API unavailable – falling back to demo data');
+    setState(() {
+      _vendors = VendorsDemo.vendors.map((e) => Vendor.fromJson(e)).toList();
+      _isLoading = false;
+    });
+  }
+
   Future<void> _loadVendors() async {
-    final result = await ApiClient.getVendors();
+    try {
+      final result = await ApiClient.getVendors();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (result['success'] == true) {
-      final data = result['data'] as List;
-      setState(() {
-        _vendors = data.map((e) => Vendor.fromJson(e)).toList();
-        _isLoading = false;
-      });
-    } else {
-      setState(() => _isLoading = false);
+      if (result['success'] == true) {
+        final data = result['data'] as List;
+        final loaded = data.map((e) => Vendor.fromJson(e)).toList();
+        if (loaded.isEmpty) {
+          debugPrint('[Vendors] API returned empty list – falling back to demo data');
+          _seedDemoData();
+        } else {
+          setState(() {
+            _vendors = loaded;
+            _isLoading = false;
+          });
+        }
+      } else {
+        _seedDemoData();
+      }
+    } catch (e) {
+      debugPrint('[Vendors] API error: $e – falling back to demo data');
+      if (!mounted) return;
+      _seedDemoData();
     }
   }
 
@@ -85,8 +112,8 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 768;
+    final responsive = Responsive(context);
+    final isMobile = responsive.isMobile;
 
     return ProtectedRoute(
       title: 'Vendors',
@@ -105,10 +132,11 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                     Text(
                       'Vendors',
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: responsive.value(mobile: 22, tablet: 26, desktop: 28),
                         fontWeight: FontWeight.bold,
                         color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -189,7 +217,7 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                 ),
               ),
               SizedBox(
-                width: 150,
+                width: isMobile ? double.infinity : 150,
                 child: MadSelect<String>(
                   value: _statusFilter,
                   placeholder: 'All Status',
@@ -217,7 +245,12 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
           // Vendor cards/list
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
+                ? MadCard(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: MadListSkeleton(itemCount: 6, showAvatar: true, showAction: true),
+                    ),
+                  )
                 : _filteredVendors.isEmpty
                     ? _buildEmptyState(isDark)
                     : isMobile
@@ -300,6 +333,7 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                             fontSize: 13,
                             color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                     ],
                   ),
@@ -307,9 +341,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                 MadDropdownMenuButton(
                   items: [
                     MadMenuItem(label: 'View Details', icon: LucideIcons.eye, onTap: () => _showVendorDetails(vendor)),
-                    MadMenuItem(label: 'Edit', icon: LucideIcons.pencil, onTap: () {}),
+                    MadMenuItem(label: 'Edit', icon: LucideIcons.pencil, onTap: () => _showEditVendorDialog(vendor)),
                     MadMenuItem(label: 'Create PO', icon: LucideIcons.shoppingCart, onTap: () {}),
-                    MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () {}),
+                    MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _showDeleteConfirm(vendor)),
                   ],
                 ),
               ],
@@ -327,9 +361,16 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                   const SizedBox(width: 16),
                 ],
                 MadBadge(
-                  text: vendor.status ?? 'Active',
+                  text: vendor.status,
                   variant: vendor.status == 'Active' ? BadgeVariant.default_ : BadgeVariant.secondary,
                 ),
+                if (vendor.type != null && vendor.type!.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  MadBadge(
+                    text: vendor.type!,
+                    variant: BadgeVariant.secondary,
+                  ),
+                ],
               ],
             ),
             const Spacer(),
@@ -494,9 +535,13 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
             _buildDetailRow('Address', vendor.address!),
           if (vendor.gstNo != null)
             _buildDetailRow('GST Number', vendor.gstNo!),
+          if (vendor.panNo != null)
+            _buildDetailRow('PAN Number', vendor.panNo!),
           if (vendor.rating != null)
             _buildDetailRow('Rating', '${vendor.rating!.toStringAsFixed(1)} / 5.0'),
-          _buildDetailRow('Status', vendor.status ?? 'Active'),
+          if (vendor.type != null && vendor.type!.isNotEmpty)
+            _buildDetailRow('Type', vendor.type!),
+          _buildDetailRow('Status', vendor.status),
         ],
       ),
       actions: [
@@ -505,6 +550,7 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
           variant: ButtonVariant.outline,
           onPressed: () {
             Navigator.pop(context);
+            _showEditVendorDialog(vendor);
           },
         ),
         MadButton(
@@ -516,6 +562,179 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
         ),
       ],
     );
+  }
+
+  void _showEditVendorDialog(Vendor vendor) {
+    final nameController = TextEditingController(text: vendor.name);
+    final contactController = TextEditingController(text: vendor.contactPerson ?? '');
+    final phoneController = TextEditingController(text: vendor.phone ?? '');
+    final emailController = TextEditingController(text: vendor.email ?? '');
+    final addressController = TextEditingController(text: vendor.address ?? '');
+    final gstController = TextEditingController(text: vendor.gstNo ?? '');
+    final panController = TextEditingController(text: vendor.panNo ?? '');
+    String? selectedStatus = vendor.status;
+    String? selectedType = vendor.type;
+
+    MadFormDialog.show(
+      context: context,
+      title: 'Edit Vendor',
+      maxWidth: 500,
+      content: SingleChildScrollView(
+        child: StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                MadInput(
+                  controller: nameController,
+                  labelText: 'Company Name',
+                  hintText: 'Enter vendor company name',
+                ),
+                const SizedBox(height: 16),
+                MadSelect<String>(
+                  labelText: 'Type',
+                  value: selectedType,
+                  placeholder: 'Select type',
+                  options: const [
+                    MadSelectOption(value: 'Vendor', label: 'Vendor'),
+                    MadSelectOption(value: 'Customer', label: 'Customer'),
+                    MadSelectOption(value: 'Service Provider', label: 'Service Provider'),
+                  ],
+                  onChanged: (v) => setDialogState(() => selectedType = v),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: MadInput(
+                        controller: contactController,
+                        labelText: 'Contact Person',
+                        hintText: 'Primary contact name',
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: MadInput(
+                        controller: phoneController,
+                        labelText: 'Phone',
+                        hintText: 'Contact number',
+                        keyboardType: TextInputType.phone,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                MadInput(
+                  controller: emailController,
+                  labelText: 'Email',
+                  hintText: 'vendor@example.com',
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 16),
+                MadTextarea(
+                  controller: addressController,
+                  labelText: 'Address',
+                  hintText: 'Full business address',
+                  minLines: 2,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: MadInput(
+                        controller: gstController,
+                        labelText: 'GST Number',
+                        hintText: 'GSTIN (optional)',
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: MadInput(
+                        controller: panController,
+                        labelText: 'PAN Number',
+                        hintText: 'PAN (optional)',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                MadSelect<String>(
+                  labelText: 'Status',
+                  value: selectedStatus,
+                  placeholder: 'Select status',
+                  options: const [
+                    MadSelectOption(value: 'Active', label: 'Active'),
+                    MadSelectOption(value: 'Inactive', label: 'Inactive'),
+                  ],
+                  onChanged: (v) => setDialogState(() => selectedStatus = v),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+      actions: [
+        MadButton(
+          text: 'Cancel',
+          variant: ButtonVariant.outline,
+          onPressed: () => Navigator.pop(context),
+        ),
+        MadButton(
+          text: 'Save',
+          onPressed: () async {
+            final data = <String, dynamic>{
+              'name': nameController.text.trim(),
+              'contact_person': contactController.text.trim().isEmpty ? null : contactController.text.trim(),
+              'phone': phoneController.text.trim().isEmpty ? null : phoneController.text.trim(),
+              'email': emailController.text.trim().isEmpty ? null : emailController.text.trim(),
+              'address': addressController.text.trim().isEmpty ? null : addressController.text.trim(),
+              'gst_no': gstController.text.trim().isEmpty ? null : gstController.text.trim(),
+              'pan_no': panController.text.trim().isEmpty ? null : panController.text.trim(),
+              'status': selectedStatus ?? 'Active',
+              'type': selectedType,
+            };
+            Navigator.pop(context);
+            final result = await ApiClient.updateVendor(vendor.id, data);
+            if (!mounted) return;
+            if (result['success'] == true) {
+              _loadVendors();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Vendor updated successfully')),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(result['message']?.toString() ?? 'Failed to update vendor')),
+              );
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showDeleteConfirm(Vendor vendor) {
+    MadDialog.confirm(
+      context: context,
+      title: 'Delete Vendor',
+      description: 'Are you sure you want to delete "${vendor.name}"? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      destructive: true,
+    ).then((confirmed) async {
+      if (confirmed != true || !mounted) return;
+      final result = await ApiClient.deleteVendor(vendor.id);
+      if (!mounted) return;
+      if (result['success'] == true) {
+        _loadVendors();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vendor deleted')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['message']?.toString() ?? 'Failed to delete vendor')),
+        );
+      }
+    });
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -547,72 +766,113 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
   }
 
   void _showAddVendorDialog() {
+    final nameController = TextEditingController();
+    final contactController = TextEditingController();
+    final phoneController = TextEditingController();
+    final emailController = TextEditingController();
+    final addressController = TextEditingController();
+    final gstController = TextEditingController();
+    final panController = TextEditingController();
+    String? selectedStatus = 'Active';
+    String? selectedType = 'Vendor';
+
     MadFormDialog.show(
       context: context,
       title: 'Add Vendor',
       maxWidth: 500,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          MadInput(
-            labelText: 'Company Name',
-            hintText: 'Enter vendor company name',
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: MadInput(
-                  labelText: 'Contact Person',
-                  hintText: 'Primary contact name',
+      content: SingleChildScrollView(
+        child: StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                MadInput(
+                  controller: nameController,
+                  labelText: 'Company Name',
+                  hintText: 'Enter vendor company name',
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: MadInput(
-                  labelText: 'Phone',
-                  hintText: 'Contact number',
-                  keyboardType: TextInputType.phone,
+                const SizedBox(height: 16),
+                MadSelect<String>(
+                  labelText: 'Type',
+                  value: selectedType,
+                  placeholder: 'Select type',
+                  options: const [
+                    MadSelectOption(value: 'Vendor', label: 'Vendor'),
+                    MadSelectOption(value: 'Customer', label: 'Customer'),
+                    MadSelectOption(value: 'Service Provider', label: 'Service Provider'),
+                  ],
+                  onChanged: (v) => setDialogState(() => selectedType = v),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          MadInput(
-            labelText: 'Email',
-            hintText: 'vendor@example.com',
-            keyboardType: TextInputType.emailAddress,
-          ),
-          const SizedBox(height: 16),
-          MadTextarea(
-            labelText: 'Address',
-            hintText: 'Full business address',
-            minLines: 2,
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: MadInput(
-                  labelText: 'GST Number',
-                  hintText: 'GSTIN (optional)',
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: MadInput(
+                        controller: contactController,
+                        labelText: 'Contact Person',
+                        hintText: 'Primary contact name',
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: MadInput(
+                        controller: phoneController,
+                        labelText: 'Phone',
+                        hintText: 'Contact number',
+                        keyboardType: TextInputType.phone,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: MadSelect<String>(
+                const SizedBox(height: 16),
+                MadInput(
+                  controller: emailController,
+                  labelText: 'Email',
+                  hintText: 'vendor@example.com',
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 16),
+                MadTextarea(
+                  controller: addressController,
+                  labelText: 'Address',
+                  hintText: 'Full business address',
+                  minLines: 2,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: MadInput(
+                        controller: gstController,
+                        labelText: 'GST Number',
+                        hintText: 'GSTIN (optional)',
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: MadInput(
+                        controller: panController,
+                        labelText: 'PAN Number',
+                        hintText: 'PAN (optional)',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                MadSelect<String>(
                   labelText: 'Status',
+                  value: selectedStatus,
                   placeholder: 'Select status',
                   options: const [
                     MadSelectOption(value: 'Active', label: 'Active'),
                     MadSelectOption(value: 'Inactive', label: 'Inactive'),
                   ],
-                  onChanged: (value) {},
+                  onChanged: (v) => setDialogState(() => selectedStatus = v),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            );
+          },
+        ),
       ),
       actions: [
         MadButton(
@@ -622,9 +882,38 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
         ),
         MadButton(
           text: 'Add Vendor',
-          onPressed: () {
+          onPressed: () async {
+            final name = nameController.text.trim();
+            if (name.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Company name is required')),
+              );
+              return;
+            }
+            final data = <String, dynamic>{
+              'name': name,
+              'contact_person': contactController.text.trim().isEmpty ? null : contactController.text.trim(),
+              'phone': phoneController.text.trim().isEmpty ? null : phoneController.text.trim(),
+              'email': emailController.text.trim().isEmpty ? null : emailController.text.trim(),
+              'address': addressController.text.trim().isEmpty ? null : addressController.text.trim(),
+              'gst_no': gstController.text.trim().isEmpty ? null : gstController.text.trim(),
+              'pan_no': panController.text.trim().isEmpty ? null : panController.text.trim(),
+              'status': selectedStatus ?? 'Active',
+              'type': selectedType,
+            };
             Navigator.pop(context);
-            _loadVendors();
+            final result = await ApiClient.createVendor(data);
+            if (!mounted) return;
+            if (result['success'] == true) {
+              _loadVendors();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Vendor added successfully')),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(result['message']?.toString() ?? 'Failed to add vendor')),
+              );
+            }
           },
         ),
       ],

@@ -7,6 +7,7 @@ import '../services/api_client.dart';
 import '../models/challan.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../demo_data/remaining_modules_demo.dart';
 
 /// Delivery Challans page
 class ChallansPageFull extends StatefulWidget {
@@ -17,8 +18,11 @@ class ChallansPageFull extends StatefulWidget {
 }
 
 class _ChallansPageFullState extends State<ChallansPageFull> {
-  bool _isLoading = true;
-  List<Challan> _challans = [];
+  // START WITH DEMO DATA – never show blank
+  bool _isLoading = false;
+  List<Challan> _challans = ChallansDemo.challans
+      .map((e) => Challan.fromJson(e))
+      .toList();
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -28,6 +32,7 @@ class _ChallansPageFullState extends State<ChallansPageFull> {
   @override
   void initState() {
     super.initState();
+    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadChallans();
     });
@@ -39,27 +44,46 @@ class _ChallansPageFullState extends State<ChallansPageFull> {
     super.dispose();
   }
 
+  void _seedDemoData() {
+    debugPrint('[Challans] API unavailable – falling back to demo data');
+    setState(() {
+      _challans = ChallansDemo.challans.map((e) => Challan.fromJson(e)).toList();
+      _isLoading = false;
+    });
+  }
+
   Future<void> _loadChallans() async {
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
 
     if (projectId.isEmpty) {
-      setState(() => _isLoading = false);
+      _seedDemoData();
       return;
     }
 
-    final result = await ApiClient.getChallansByProject(projectId);
+    try {
+      final result = await ApiClient.getChallansByProject(projectId);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (result['success'] == true) {
-      final data = result['data'] as List;
-      setState(() {
-        _challans = data.map((e) => Challan.fromJson(e)).toList();
-        _isLoading = false;
-      });
-    } else {
-      setState(() => _isLoading = false);
+      if (result['success'] == true) {
+        final data = result['data'] as List;
+        final loaded = data.map((e) => Challan.fromJson(e)).toList();
+        if (loaded.isEmpty) {
+          _seedDemoData();
+        } else {
+          setState(() {
+            _challans = loaded;
+            _isLoading = false;
+          });
+        }
+      } else {
+        _seedDemoData();
+      }
+    } catch (e) {
+      debugPrint('[Challans] API error: $e – falling back to demo data');
+      if (!mounted) return;
+      _seedDemoData();
     }
   }
 
@@ -70,7 +94,7 @@ class _ChallansPageFullState extends State<ChallansPageFull> {
       final query = _searchQuery.toLowerCase();
       result = result.where((c) {
         return c.challanNo.toLowerCase().contains(query) ||
-            (c.vendor?.toLowerCase().contains(query) ?? false);
+            c.vendor.toLowerCase().contains(query);
       }).toList();
     }
 
@@ -272,7 +296,7 @@ class _ChallansPageFullState extends State<ChallansPageFull> {
   Widget _buildHeaderCell(String text, {required int flex, required bool isDark}) {
     return Expanded(
       flex: flex,
-      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
+      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), overflow: TextOverflow.ellipsis),
     );
   }
 
@@ -283,17 +307,17 @@ class _ChallansPageFullState extends State<ChallansPageFull> {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Row(
         children: [
-          Expanded(flex: 1, child: Text(challan.challanNo, style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
-          Expanded(flex: 2, child: Text(challan.vendor ?? '-')),
+          Expanded(flex: 1, child: Text(challan.challanNo, style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
+          Expanded(flex: 2, child: Text(challan.vendor, overflow: TextOverflow.ellipsis)),
           if (!isMobile) ...[
-            Expanded(flex: 1, child: Text(challan.date ?? '-', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground))),
-            Expanded(flex: 1, child: Text('${challan.items ?? 0} items')),
+            Expanded(flex: 1, child: Text(challan.date ?? '-', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), overflow: TextOverflow.ellipsis)),
+            Expanded(flex: 1, child: Text('${challan.items?.length ?? challan.itemCount ?? 0} items', overflow: TextOverflow.ellipsis)),
           ],
           Expanded(flex: 1, child: MadBadge(text: challan.status, variant: statusVariant)),
           MadDropdownMenuButton(items: [
             MadMenuItem(label: 'View Details', icon: LucideIcons.eye, onTap: () {}),
-            MadMenuItem(label: 'Mark Received', icon: LucideIcons.packageCheck, onTap: () {}),
-            MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () {}),
+            MadMenuItem(label: 'Mark Received', icon: LucideIcons.packageCheck, onTap: () => _markChallanReceived(challan)),
+            MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _confirmDeleteChallan(challan)),
           ]),
         ],
       ),
@@ -332,6 +356,42 @@ class _ChallansPageFullState extends State<ChallansPageFull> {
         ]),
       ),
     );
+  }
+
+  void _markChallanReceived(Challan challan) {
+    setState(() {
+      final i = _challans.indexWhere((c) => c.id == challan.id);
+      if (i >= 0) {
+        final c = _challans[i];
+        _challans[i] = Challan(
+          id: c.id,
+          projectId: c.projectId,
+          challanNo: c.challanNo,
+          vendor: c.vendor,
+          date: c.date,
+          itemCount: c.itemCount,
+          status: 'Received',
+          items: c.items,
+          createdAt: c.createdAt,
+        );
+      }
+    });
+    if (mounted) showToast(context, 'Challan marked as Received');
+  }
+
+  void _confirmDeleteChallan(Challan challan) {
+    MadDialog.confirm(
+      context: context,
+      title: 'Delete Challan',
+      description: 'Are you sure you want to delete challan "${challan.challanNo}"? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      destructive: true,
+    ).then((confirmed) {
+      if (confirmed != true || !mounted) return;
+      setState(() => _challans.removeWhere((c) => c.id == challan.id));
+      showToast(context, 'Challan deleted');
+    });
   }
 
   void _showChallanDialog() {

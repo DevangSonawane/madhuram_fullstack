@@ -413,6 +413,31 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: MadButton(
+                            text: 'Devang Demo',
+                            variant: ButtonVariant.outline,
+                            icon: LucideIcons.userCheck,
+                            onPressed: _isLoading ? null : () {
+                              _emailController.text = 'devang@madhuram.com';
+                              _passwordController.text = 'demo123';
+                              _login();
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Terms and Privacy
+                        Text(
+                          'By continuing, you agree to our Terms of Service and Privacy Policy.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                          ),
+                        ),
                       ],
                     ),
                   ),

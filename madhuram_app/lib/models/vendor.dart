@@ -6,6 +6,7 @@ class Vendor {
   final String? email;
   final String? address;
   final String status;
+  final String? type; // Vendor, Customer, Service Provider
   final double? rating;
   final String? gstNo;
   final String? panNo;
@@ -19,6 +20,7 @@ class Vendor {
     this.email,
     this.address,
     this.status = 'Active',
+    this.type,
     this.rating,
     this.gstNo,
     this.panNo,
@@ -34,6 +36,7 @@ class Vendor {
       email: json['email'],
       address: json['address'],
       status: json['status'] ?? 'Active',
+      type: json['type'],
       rating: json['rating'] != null ? (json['rating'] as num).toDouble() : null,
       gstNo: json['gst_no'],
       panNo: json['pan_no'],
@@ -51,6 +54,7 @@ class Vendor {
     'email': email,
     'address': address,
     'status': status,
+    'type': type,
     'rating': rating,
     'gst_no': gstNo,
     'pan_no': panNo,
@@ -64,6 +68,7 @@ class Vendor {
     String? email,
     String? address,
     String? status,
+    String? type,
     double? rating,
     String? gstNo,
     String? panNo,
@@ -76,6 +81,7 @@ class Vendor {
       email: email ?? this.email,
       address: address ?? this.address,
       status: status ?? this.status,
+      type: type ?? this.type,
       rating: rating ?? this.rating,
       gstNo: gstNo ?? this.gstNo,
       panNo: panNo ?? this.panNo,
