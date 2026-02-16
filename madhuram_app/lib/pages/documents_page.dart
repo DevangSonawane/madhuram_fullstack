@@ -130,7 +130,7 @@ class _DocumentsPageFullState extends State<DocumentsPageFull> {
         const SizedBox(height: 24),
         Expanded(
           child: _isLoading ? const Center(child: CircularProgressIndicator()) : _filteredDocuments.isEmpty ? _buildEmptyState(isDark) : GridView.builder(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: responsive.value(mobile: 1, tablet: 2, desktop: responsive.screenWidth > 1200 ? 4 : 3), crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: isMobile ? 3 : 1.5),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: responsive.value(mobile: 1, tablet: 2, desktop: responsive.screenWidth > 1200 ? 4 : 3), crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: isMobile ? 2.4 : 1.5),
             itemCount: _filteredDocuments.length,
             itemBuilder: (context, index) => _buildDocumentCard(_filteredDocuments[index], isDark),
           ),
@@ -146,23 +146,27 @@ class _DocumentsPageFullState extends State<DocumentsPageFull> {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(color: doc.iconColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-              child: Icon(doc.icon, color: doc.iconColor, size: 20),
-            ),
-            const Spacer(),
-            MadDropdownMenuButton(items: [
-              MadMenuItem(label: 'Download', icon: LucideIcons.download, onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Downloading ${doc.name}...')))),
-              MadMenuItem(label: 'Preview', icon: LucideIcons.eye, onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preview ${doc.name}')))),
-              MadMenuItem(label: 'Share', icon: LucideIcons.share2, onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Share ${doc.name}')))),
-              MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _confirmDeleteDocument(doc)),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(children: [
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(color: doc.iconColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                child: Icon(doc.icon, color: doc.iconColor, size: 20),
+              ),
+              const SizedBox(width: 8),
+              // Keep actions aligned to the end but allow scaling when needed
+              MadDropdownMenuButton(items: [
+                MadMenuItem(label: 'Download', icon: LucideIcons.download, onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Downloading ${doc.name}...')))),
+                MadMenuItem(label: 'Preview', icon: LucideIcons.eye, onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preview ${doc.name}')))),
+                MadMenuItem(label: 'Share', icon: LucideIcons.share2, onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Share ${doc.name}')))),
+                MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _confirmDeleteDocument(doc)),
+              ]),
             ]),
-          ]),
+          ),
           const SizedBox(height: 12),
           Text(doc.name, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14), maxLines: 2, overflow: TextOverflow.ellipsis),
-          const Spacer(),
+          const SizedBox(height: 8),
           Row(children: [
             Text(doc.size ?? '', style: TextStyle(fontSize: 12, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
             const SizedBox(width: 8),

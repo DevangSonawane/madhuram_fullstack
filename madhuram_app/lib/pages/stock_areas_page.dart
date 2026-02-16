@@ -66,9 +66,9 @@ class _StockAreasPageState extends State<StockAreasPage> {
   String _searchQuery = '';
   final _searchController = TextEditingController();
 
-  late List<WarehouseModel> _warehouses;
-  late List<ZoneModel> _zones;
-  late List<RackModel> _racks;
+  List<WarehouseModel> _warehouses = [];
+  List<ZoneModel> _zones = [];
+  List<RackModel> _racks = [];
 
   @override
   void initState() {
@@ -337,22 +337,35 @@ class _StockAreasPageState extends State<StockAreasPage> {
                 ],
               ),
             ),
-            MadBadge(
-              text: warehouse.status,
-              variant: warehouse.status == 'Active' ? BadgeVariant.default_ : BadgeVariant.secondary,
-            ),
-            const SizedBox(width: 16),
-            Text(
-              'Capacity: ${warehouse.currentStock.toStringAsFixed(0)} / ${warehouse.totalCapacity.toStringAsFixed(0)}',
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    MadBadge(
+                      text: warehouse.status,
+                      variant: warehouse.status == 'Active' ? BadgeVariant.default_ : BadgeVariant.secondary,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Capacity: ${warehouse.currentStock.toStringAsFixed(0)} / ${warehouse.totalCapacity.toStringAsFixed(0)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${util.toStringAsFixed(1)}%',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: utilColor),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              '${util.toStringAsFixed(1)}%',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: utilColor),
             ),
           ],
         ),

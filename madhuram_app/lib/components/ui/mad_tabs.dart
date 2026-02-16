@@ -112,6 +112,7 @@ class _MadTabsState extends State<MadTabs> with SingleTickerProviderStateMixin {
       padding: const EdgeInsets.all(4),
       child: TabBar(
         controller: _tabController,
+        isScrollable: true,
         indicator: BoxDecoration(
           color: isDark ? AppTheme.darkCard : Colors.white,
           borderRadius: BorderRadius.circular(6),
@@ -144,6 +145,7 @@ class _MadTabsState extends State<MadTabs> with SingleTickerProviderStateMixin {
   Widget _buildUnderlineTabs(bool isDark) {
     return TabBar(
       controller: _tabController,
+      isScrollable: true,
       indicatorColor: AppTheme.primaryColor,
       indicatorWeight: 2,
       labelColor: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
@@ -227,7 +229,12 @@ class _MadTabsState extends State<MadTabs> with SingleTickerProviderStateMixin {
             Icon(tab.icon, size: 16),
             const SizedBox(width: 8),
           ],
-          Text(tab.label),
+          Text(
+            tab.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
+          ),
         ],
       ),
     );
@@ -253,7 +260,7 @@ class MadTabsList extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    final container = Container(
       decoration: style == TabStyle.default_
           ? BoxDecoration(
               color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.5),
@@ -285,6 +292,9 @@ class MadTabsList extends StatelessWidget {
               ),
               child: Text(
                 tab,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -297,6 +307,11 @@ class MadTabsList extends StatelessWidget {
           );
         }).toList(),
       ),
+    );
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: container,
     );
   }
 }

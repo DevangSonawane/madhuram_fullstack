@@ -129,7 +129,7 @@ class _MainLayoutState extends State<MainLayout> {
                         child: Align(
                           alignment: Alignment.topCenter,
                           child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 1400),
+                            constraints: const BoxConstraints(maxWidth: 1400, minWidth: 0),
                             child: widget.child,
                           ),
                         ),

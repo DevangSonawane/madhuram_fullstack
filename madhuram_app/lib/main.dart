@@ -237,6 +237,17 @@ class MyApp extends StatelessWidget {
             themeMode: effectiveTheme == AppThemeMode.dark
                 ? ThemeMode.dark
                 : ThemeMode.light,
+            builder: (context, child) {
+              final mq = MediaQuery.of(context);
+              final double current = mq.textScaler.scale(1.0);
+              final double clamped = current.clamp(0.85, 1.15);
+              return MediaQuery(
+                data: mq.copyWith(
+                  textScaler: TextScaler.linear(clamped),
+                ),
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
             home: const AppRouter(),
             onGenerateRoute: (settings) {
               final builder = _appRoutes[settings.name];

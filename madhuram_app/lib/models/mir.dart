@@ -43,7 +43,15 @@ class MIR {
   });
 
   factory MIR.fromJson(Map<String, dynamic> json) {
-    final dynamicFieldJson = json['dynamic_field'] as Map<String, dynamic>?;
+    final dynamic rawDynamicField = json['dynamic_field'];
+    final Map<String, dynamic>? dynamicFieldJson =
+        rawDynamicField is Map<String, dynamic> ? rawDynamicField : null;
+
+    final dynamic rawRefs = json['refrence_docs_attached'];
+    final List<String>? refs = rawRefs is List
+        ? List<String>.from(rawRefs.map((e) => e.toString()))
+        : null;
+
     return MIR(
       id: (json['mir_id'] ?? json['id'] ?? '').toString(),
       projectId: json['project_id']?.toString(),
@@ -53,9 +61,7 @@ class MIR {
       pmc: json['pmc'],
       contractor: json['contractor'],
       vendorCode: json['vendor_code'],
-      referenceDocsAttached: json['refrence_docs_attached'] != null
-          ? List<String>.from(json['refrence_docs_attached'])
-          : null,
+      referenceDocsAttached: refs,
       dynamicField: dynamicFieldJson,
       status: json['status'],
       createdAt: json['created_at'] != null

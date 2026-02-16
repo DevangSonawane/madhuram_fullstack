@@ -27,11 +27,20 @@ class _DashboardPageState extends State<DashboardPage> {
   Map<String, dynamic> _stats = {};
   bool _isLoading = true;
   String? _error;
+  bool _didInitLoad = false;
 
   @override
   void initState() {
     super.initState();
-    _loadDashboardData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_didInitLoad) {
+      _didInitLoad = true;
+      _loadDashboardData();
+    }
   }
 
   Future<void> _loadDashboardData() async {
@@ -208,21 +217,20 @@ class _DashboardPageState extends State<DashboardPage> {
                 ],
               )
             else
-              IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      flex: responsive.isTablet ? 1 : 3,
-                      child: _buildConsumptionChart(isDark, consumptionData, responsive),
-                    ),
-                    SizedBox(width: responsive.spacing),
-                    Expanded(
-                      flex: responsive.isTablet ? 1 : 2,
-                      child: _buildRecentActivity(isDark, recentActivity, responsive),
-                    ),
-                  ],
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Expanded(
+                    flex: responsive.isTablet ? 1 : 3,
+                    child: _buildConsumptionChart(isDark, consumptionData, responsive),
+                  ),
+                  SizedBox(width: responsive.spacing),
+                  Expanded(
+                    flex: responsive.isTablet ? 1 : 2,
+                    child: _buildRecentActivity(isDark, recentActivity, responsive),
+                  ),
+                ],
               ),
           ],
         ),

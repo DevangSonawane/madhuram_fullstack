@@ -9,6 +9,26 @@ import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
 import '../demo_data/remaining_modules_demo.dart';
 
+Challan _safeChallanFromDemo(Map<String, dynamic> e) {
+  final rawItems = e['items'];
+  final int? itemCount = rawItems is int
+      ? rawItems
+      : (rawItems is List ? rawItems.length : null);
+  return Challan(
+    id: (e['challan_id'] ?? e['id'] ?? '').toString(),
+    projectId: e['project_id']?.toString(),
+    challanNo: e['challan_no'] ?? '',
+    vendor: e['vendor'] ?? '',
+    date: e['date'],
+    itemCount: itemCount,
+    status: e['status'] ?? 'Pending',
+    items: null,
+    createdAt: e['created_at'] != null
+        ? DateTime.tryParse(e['created_at'])
+        : null,
+  );
+}
+
 /// Delivery Challans page
 class ChallansPageFull extends StatefulWidget {
   const ChallansPageFull({super.key});
@@ -21,7 +41,7 @@ class _ChallansPageFullState extends State<ChallansPageFull> {
   // START WITH DEMO DATA – never show blank
   bool _isLoading = false;
   List<Challan> _challans = ChallansDemo.challans
-      .map((e) => Challan.fromJson(e))
+      .map((e) => _safeChallanFromDemo(e))
       .toList();
   String _searchQuery = '';
   int _currentPage = 1;
@@ -47,7 +67,7 @@ class _ChallansPageFullState extends State<ChallansPageFull> {
   void _seedDemoData() {
     debugPrint('[Challans] API unavailable – falling back to demo data');
     setState(() {
-      _challans = ChallansDemo.challans.map((e) => Challan.fromJson(e)).toList();
+      _challans = ChallansDemo.challans.map((e) => _safeChallanFromDemo(e)).toList();
       _isLoading = false;
     });
   }
@@ -86,6 +106,7 @@ class _ChallansPageFullState extends State<ChallansPageFull> {
       _seedDemoData();
     }
   }
+
 
   List<Challan> get _filteredChallans {
     List<Challan> result = _challans;

@@ -22,17 +22,29 @@ class Challan {
   });
 
   factory Challan.fromJson(Map<String, dynamic> json) {
-    final itemsJson = json['items'] as List?;
-    
+    final dynamic rawItems = json['items'];
+    List<dynamic>? itemsJson;
+    int? itemCount;
+
+    if (rawItems is List) {
+      itemsJson = rawItems;
+      itemCount = rawItems.length;
+    } else if (rawItems is int) {
+      itemCount = rawItems;
+    } else {
+      itemsJson = null;
+      itemCount = null;
+    }
+
     return Challan(
       id: (json['challan_id'] ?? json['id'] ?? '').toString(),
       projectId: json['project_id']?.toString(),
       challanNo: json['challan_no'] ?? '',
       vendor: json['vendor'] ?? '',
       date: json['date'],
-      itemCount: json['items'] is int ? json['items'] : itemsJson?.length,
+      itemCount: itemCount,
       status: json['status'] ?? 'Pending',
-      items: itemsJson?.map((e) => ChallanItem.fromJson(e)).toList(),
+      items: itemsJson?.map((e) => ChallanItem.fromJson(e as Map<String, dynamic>)).toList(),
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'])
           : null,

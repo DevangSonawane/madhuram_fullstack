@@ -210,8 +210,9 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
           ),
           const SizedBox(height: 24),
 
-          // Add Vendor / Add Product
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
             children: [
               MadButton(
                 icon: LucideIcons.plus,
@@ -220,7 +221,6 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
                 size: ButtonSize.sm,
                 onPressed: _addVendor,
               ),
-              const SizedBox(width: 12),
               MadButton(
                 icon: LucideIcons.plus,
                 text: 'Add Product',
@@ -228,27 +228,27 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
                 size: ButtonSize.sm,
                 onPressed: _addProduct,
               ),
-              if (isMobile) ...[
-                const SizedBox(width: 12),
+              if (isMobile)
                 MadButton(
                   icon: LucideIcons.fileDown,
                   size: ButtonSize.icon,
                   variant: ButtonVariant.outline,
                   onPressed: () => showToast(context, 'Export PDF – placeholder'),
                 ),
+              if (isMobile)
                 MadButton(
                   icon: LucideIcons.fileSpreadsheet,
                   size: ButtonSize.icon,
                   variant: ButtonVariant.outline,
                   onPressed: () => showToast(context, 'Export to Excel – placeholder'),
                 ),
+              if (isMobile)
                 MadButton(
                   icon: LucideIcons.send,
                   size: ButtonSize.icon,
                   variant: ButtonVariant.outline,
                   onPressed: () => showToast(context, 'Request new quotes – placeholder'),
                 ),
-              ],
             ],
           ),
           const SizedBox(height: 24),

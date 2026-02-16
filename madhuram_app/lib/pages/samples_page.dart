@@ -211,9 +211,11 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
     return ProtectedRoute(
       title: 'Samples & Configuration',
       route: '/samples',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: SingleChildScrollView(
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -335,60 +337,68 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
           const SizedBox(height: 24),
 
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Floor-wise Configuration',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+              Expanded(
+                child: Text(
+                  'Floor-wise Configuration',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  softWrap: false,
+                ),
               ),
               if (isMobile)
-                Row(
-                  children: [
-                    MadButton(text: 'View Diagrams', icon: LucideIcons.eye, variant: ButtonVariant.outline, size: ButtonSize.sm, onPressed: _showDiagramViewer),
-                    const SizedBox(width: 8),
-                    MadButton(text: 'Export', icon: LucideIcons.fileSpreadsheet, variant: ButtonVariant.outline, size: ButtonSize.sm, onPressed: _exportToExcel),
-                    const SizedBox(width: 8),
-                    MadButton(text: 'Save', icon: LucideIcons.save, size: ButtonSize.sm, onPressed: _saveConfiguration),
-                  ],
+                Flexible(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      MadButton(text: 'View Diagrams', icon: LucideIcons.eye, variant: ButtonVariant.outline, size: ButtonSize.sm, onPressed: _showDiagramViewer),
+                      MadButton(text: 'Export', icon: LucideIcons.fileSpreadsheet, variant: ButtonVariant.outline, size: ButtonSize.sm, onPressed: _exportToExcel),
+                      MadButton(text: 'Save', icon: LucideIcons.save, size: ButtonSize.sm, onPressed: _saveConfiguration),
+                    ],
+                  ),
                 ),
             ],
           ),
           const SizedBox(height: 12),
 
-          Expanded(
-            child: MadCard(
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.3),
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                    ),
-                    child: Row(
-                      children: [
-                        _buildHeaderCell('Floor', flex: 1, isDark: isDark),
-                        _buildHeaderCell('Configuration', flex: 2, isDark: isDark),
-                        _buildHeaderCell('Qty', flex: 1, isDark: isDark),
-                        _buildHeaderCell('Unit', flex: 1, isDark: isDark),
-                        _buildHeaderCell('Status', flex: 1, isDark: isDark),
-                        if (!isMobile) _buildHeaderCell('Lock/Unlock', flex: 1, isDark: isDark),
-                        const SizedBox(width: 80),
-                      ],
-                    ),
+          MadCard(
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.3),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
                   ),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: _filteredConfigs.length,
-                      separatorBuilder: (_, _) => Divider(height: 1, color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5)),
-                      itemBuilder: (context, index) {
-                        final row = _filteredConfigs[index];
-                        return _buildConfigRow(row, isDark, isMobile);
-                      },
-                    ),
+                  child: Row(
+                    children: [
+                      _buildHeaderCell('Floor', flex: 1, isDark: isDark),
+                      _buildHeaderCell('Configuration', flex: 2, isDark: isDark),
+                      _buildHeaderCell('Qty', flex: 1, isDark: isDark),
+                      _buildHeaderCell('Unit', flex: 1, isDark: isDark),
+                      _buildHeaderCell('Status', flex: 1, isDark: isDark),
+                      if (!isMobile) _buildHeaderCell('Lock/Unlock', flex: 1, isDark: isDark),
+                      const SizedBox(width: 80),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _filteredConfigs.length,
+                  separatorBuilder: (_, _) => Divider(
+                    height: 1,
+                    color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5),
+                  ),
+                  itemBuilder: (context, index) {
+                    final row = _filteredConfigs[index];
+                    return _buildConfigRow(row, isDark, isMobile);
+                  },
+                ),
+              ],
             ),
           ),
 
@@ -399,7 +409,9 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
             icon: LucideIcons.folderOpen,
             onPressed: _loadConfiguration,
           ),
+          const SizedBox(height: 24),
         ],
+        ),
       ),
     );
   }

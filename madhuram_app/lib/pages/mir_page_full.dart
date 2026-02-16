@@ -338,20 +338,28 @@ class _MIRPageFullState extends State<MIRPageFull> {
             borderRadius: BorderRadius.circular(6),
             boxShadow: selected ? [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 1))] : null,
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 16, color: selected ? (isDark ? AppTheme.darkForeground : AppTheme.lightForeground) : (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: selected ? (isDark ? AppTheme.darkForeground : AppTheme.lightForeground) : (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: selected ? (isDark ? AppTheme.darkForeground : AppTheme.lightForeground) : (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: selected ? (isDark ? AppTheme.darkForeground : AppTheme.lightForeground) : (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -487,7 +495,9 @@ class _MIRPageFullState extends State<MIRPageFull> {
                 ),
               ],
               const SizedBox(height: 24),
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
                 children: [
                   MadButton(
                     text: 'Extract',
@@ -504,7 +514,6 @@ class _MIRPageFullState extends State<MIRPageFull> {
                             );
                           },
                   ),
-                  const SizedBox(width: 12),
                   MadButton(
                     text: _isUploading ? 'Uploading...' : 'Upload reference doc',
                     icon: LucideIcons.upload,

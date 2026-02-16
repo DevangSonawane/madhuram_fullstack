@@ -442,10 +442,15 @@ class _MadDataTableState<T> extends State<MadDataTable<T>> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
+    // Compute a reasonable minimum width per column to avoid squeezing content on desktop.
+    final baseColumnMinWidth = 160.0;
+    final selectableWidth = widget.selectable ? 48.0 : 0.0;
+    final actionsWidth = widget.rowActions != null ? 80.0 : 0.0;
+    final tableMinWidth = (widget.columns.length * baseColumnMinWidth) + selectableWidth + actionsWidth;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Header with search and actions
         if (widget.showSearch || widget.headerActions != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 16),
@@ -478,7 +483,6 @@ class _MadDataTableState<T> extends State<MadDataTable<T>> {
             ),
           ),
 
-        // Table
         Expanded(
           child: Container(
             decoration: BoxDecoration(
@@ -487,77 +491,86 @@ class _MadDataTableState<T> extends State<MadDataTable<T>> {
               ),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Column(
-              children: [
-                // Table header
-                Container(
-                  decoration: BoxDecoration(
-                    color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.5),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
-                  ),
-                  child: Row(
-                    children: [
-                      if (widget.selectable)
-                        SizedBox(
-                          width: 48,
-                          child: Checkbox(
-                            value: widget.selectedItems?.length == widget.data.length &&
-                                widget.data.isNotEmpty,
-                            tristate: true,
-                            onChanged: (_) => widget.onSelectAll?.call(),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final minWidth = tableMinWidth;
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minWidth: minWidth,
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.5),
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
                           ),
-                        ),
-                      ...widget.columns.map((column) => _buildHeaderCell(column, isDark)),
-                      if (widget.rowActions != null)
-                        const SizedBox(
-                          width: 80,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            child: Text(
-                              'Actions',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-
-                // Table body
-                Expanded(
-                  child: widget.loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _paginatedData.isEmpty
-                          ? Center(
-                              child: widget.emptyWidget ??
-                                  Text(
-                                    widget.emptyMessage ?? 'No data found',
-                                    style: TextStyle(
-                                      color: isDark
-                                          ? AppTheme.darkMutedForeground
-                                          : AppTheme.lightMutedForeground,
+                          child: Row(
+                            children: [
+                              if (widget.selectable)
+                                SizedBox(
+                                  width: 48,
+                                  child: Checkbox(
+                                    value: widget.selectedItems?.length == widget.data.length &&
+                                        widget.data.isNotEmpty,
+                                    tristate: true,
+                                    onChanged: (_) => widget.onSelectAll?.call(),
+                                  ),
+                                ),
+                              ...widget.columns.map((column) => _buildHeaderCell(column, isDark)),
+                              if (widget.rowActions != null)
+                                const SizedBox(
+                                  width: 80,
+                                  child: Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    child: Text(
+                                      'Actions',
+                                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                                     ),
                                   ),
-                            )
-                          : ListView.separated(
-                              itemCount: _paginatedData.length,
-                              separatorBuilder: (_, __) => Divider(
-                                height: 1,
-                                color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
-                              ),
-                              itemBuilder: (context, index) {
-                                final item = _paginatedData[index];
-                                final isSelected = widget.selectedItems?.contains(item) ?? false;
-                                return _buildRow(item, isSelected, isDark);
-                              },
-                            ),
-                ),
-              ],
+                                ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: widget.loading
+                              ? const Center(child: CircularProgressIndicator())
+                              : _paginatedData.isEmpty
+                                  ? Center(
+                                      child: widget.emptyWidget ??
+                                          Text(
+                                            widget.emptyMessage ?? 'No data found',
+                                            style: TextStyle(
+                                              color: isDark
+                                                  ? AppTheme.darkMutedForeground
+                                                  : AppTheme.lightMutedForeground,
+                                            ),
+                                          ),
+                                    )
+                                  : ListView.separated(
+                                      itemCount: _paginatedData.length,
+                                      separatorBuilder: (_, __) => Divider(
+                                        height: 1,
+                                        color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
+                                      ),
+                                      itemBuilder: (context, index) {
+                                        final item = _paginatedData[index];
+                                        final isSelected = widget.selectedItems?.contains(item) ?? false;
+                                        return _buildRow(item, isSelected, isDark);
+                                      },
+                                    ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ),
 
-        // Pagination
         if (widget.showPagination && _filteredData.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 16),

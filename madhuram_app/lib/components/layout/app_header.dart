@@ -33,26 +33,36 @@ class AppHeader extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final responsive = Responsive(context);
 
-    return Container(
-      height: responsive.value(mobile: 64, tablet: 72, desktop: 80),
-      padding: EdgeInsets.symmetric(
-        horizontal: responsive.value(mobile: 12, tablet: 20, desktop: 32),
-      ),
-      decoration: BoxDecoration(
-        color: (isDark ? AppTheme.darkBackground : AppTheme.lightBackground).withOpacity(0.8),
-      ),
-      child: Row(
-        children: [
-          // Mobile/Tablet menu button
-          if (!responsive.isDesktop)
-            IconButton(
-              onPressed: onMenuPressed,
-              icon: Icon(
-                LucideIcons.menu,
-                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                size: responsive.isMobile ? 20 : 24,
+    return SafeArea(
+      top: true,
+      bottom: false,
+      child: Container(
+        height: responsive.value(mobile: 64, tablet: 72, desktop: 80),
+        padding: EdgeInsets.only(
+          top: responsive.value(mobile: 4, tablet: 6, desktop: 8),
+          left: responsive.value(mobile: 12, tablet: 20, desktop: 32),
+          right: responsive.value(mobile: 12, tablet: 20, desktop: 32),
+        ),
+        decoration: BoxDecoration(
+          color: (isDark ? AppTheme.darkBackground : AppTheme.lightBackground).withOpacity(0.8),
+        ),
+        child: Row(
+          children: [
+            // Mobile/Tablet menu button
+            if (!responsive.isDesktop)
+              IconButton(
+                onPressed: onMenuPressed,
+                padding: EdgeInsets.zero,
+                constraints: BoxConstraints(
+                  minWidth: responsive.value(mobile: 44, tablet: 48, desktop: 52),
+                  minHeight: responsive.value(mobile: 44, tablet: 48, desktop: 52),
+                ),
+                icon: Icon(
+                  LucideIcons.menu,
+                  color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                  size: responsive.isMobile ? 20 : 24,
+                ),
               ),
-            ),
           
           // Breadcrumbs (desktop and tablet only)
           if (!responsive.isMobile) ...[
@@ -84,7 +94,8 @@ class AppHeader extends StatelessWidget {
           
           // User avatar
           _buildUserAvatar(context, isDark, responsive),
-        ],
+          ],
+        ),
       ),
     );
   }
