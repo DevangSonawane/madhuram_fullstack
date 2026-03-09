@@ -5,11 +5,14 @@ import 'package:http/http.dart' as http;
 import 'auth_storage.dart';
 
 class ApiClient {
-  static const String baseUrl = 'https://api.festmate.in';
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://api.festmate.in',
+  );
 
   /// Global timeout for ALL HTTP requests.
   /// If the server is unreachable, calls fail fast instead of hanging forever.
-  static const Duration _httpTimeout = Duration(seconds: 6);
+  static const Duration _httpTimeout = Duration(seconds: 20);
 
   // ============================================================================
   // Helper Methods
@@ -22,36 +25,82 @@ class ApiClient {
     return headers;
   }
 
+  static http.Response _errorResponse(int status, String message) {
+    return http.Response(
+      jsonEncode({'error': message}),
+      status,
+      headers: {'content-type': 'application/json'},
+    );
+  }
+
+  static Future<http.Response> _request(
+    Future<http.Response> Function() requestFn,
+  ) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await requestFn().timeout(_httpTimeout);
+      } on TimeoutException {
+        if (attempt == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          continue;
+        }
+        return _errorResponse(
+          408,
+          'Request timeout while contacting $baseUrl. Check internet/API and retry.',
+        );
+      } on SocketException {
+        if (attempt == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          continue;
+        }
+        return _errorResponse(
+          503,
+          'Unable to reach server at $baseUrl. Verify API URL and network access in APK.',
+        );
+      } on HandshakeException {
+        return _errorResponse(
+          495,
+          'Secure connection failed. Check SSL certificate and server domain.',
+        );
+      } on HttpException catch (e) {
+        return _errorResponse(502, e.message);
+      } catch (e) {
+        return _errorResponse(500, 'Unexpected network error: $e');
+      }
+    }
+    return _errorResponse(500, 'Unexpected request state');
+  }
+
   /// Wrapper: GET with timeout
   static Future<http.Response> _get(Uri uri, {Map<String, String>? headers}) =>
-      http.get(uri, headers: headers).timeout(_httpTimeout);
+      _request(() => http.get(uri, headers: headers));
 
   /// Wrapper: POST with timeout
   static Future<http.Response> _post(
     Uri uri, {
     Map<String, String>? headers,
     Object? body,
-  }) => http.post(uri, headers: headers, body: body).timeout(_httpTimeout);
+  }) => _request(() => http.post(uri, headers: headers, body: body));
 
   /// Wrapper: PUT with timeout
   static Future<http.Response> _put(
     Uri uri, {
     Map<String, String>? headers,
     Object? body,
-  }) => http.put(uri, headers: headers, body: body).timeout(_httpTimeout);
+  }) => _request(() => http.put(uri, headers: headers, body: body));
 
   /// Wrapper: DELETE with timeout
   static Future<http.Response> _delete(
     Uri uri, {
     Map<String, String>? headers,
-  }) => http.delete(uri, headers: headers).timeout(_httpTimeout);
+  }) => _request(() => http.delete(uri, headers: headers));
 
   /// Wrapper: PATCH with timeout
   static Future<http.Response> _patch(
     Uri uri, {
     Map<String, String>? headers,
     Object? body,
-  }) => http.patch(uri, headers: headers, body: body).timeout(_httpTimeout);
+  }) => _request(() => http.patch(uri, headers: headers, body: body));
 
   /// Helper for multipart form-data requests (for file uploads)
   static Future<Map<String, dynamic>> _multipartRequest(
@@ -81,9 +130,27 @@ class ApiClient {
       }
     }
 
-    final streamedResponse = await request.send().timeout(_httpTimeout);
-    final response = await http.Response.fromStream(streamedResponse);
-    return _handleResponse(response);
+    try {
+      final streamedResponse = await request.send().timeout(_httpTimeout);
+      final response = await http.Response.fromStream(streamedResponse);
+      return _handleResponse(response);
+    } on TimeoutException {
+      return {
+        'success': false,
+        'error':
+            'Upload timeout. Please check your internet connection and retry.',
+        'status': 408,
+      };
+    } on SocketException {
+      return {
+        'success': false,
+        'error':
+            'Unable to reach server. Verify API URL and network access in APK.',
+        'status': 503,
+      };
+    } catch (e) {
+      return {'success': false, 'error': 'Upload failed: $e', 'status': 500};
+    }
   }
 
   static Future<Map<String, dynamic>> _handleResponse(
@@ -101,9 +168,9 @@ class ApiClient {
       data = response.body;
     }
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return {'success': true, 'data': data};
+      return {'success': true, 'data': _unwrapData(data)};
     }
-    final error = (data is Map && (data['error'] ?? data['message'] != null))
+    final error = (data is Map && ((data['error'] ?? data['message']) != null))
         ? (data['error'] ?? data['message'])
         : response.reasonPhrase;
     return {'success': false, 'error': error, 'status': response.statusCode};

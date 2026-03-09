@@ -15,15 +15,12 @@ import 'package:madhuram_app/store/auth_reducer.dart';
 void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
     // Create a test store
-    final store = Store<AppState>(
-      appReducer,
-      initialState: AppState.initial(),
-    );
-    
+    final store = Store<AppState>(appReducer, initialState: AppState.initial());
+
     // Build our app and trigger a frame.
     await tester.pumpWidget(MyApp(store: store));
 
     // Verify that login page is shown
-    expect(find.text('Login'), findsWidgets);
+    expect(find.text('Welcome back'), findsOneWidget);
   });
 }
