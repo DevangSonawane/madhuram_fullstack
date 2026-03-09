@@ -8,13 +8,14 @@ import '../../store/notification_actions.dart';
 import '../../services/auth_storage.dart';
 import '../../services/api_client.dart';
 import '../../utils/responsive.dart';
-import '../../demo_data/notifications_demo.dart';
 
 /// Header matching React's Header.jsx - Responsive version
 class AppHeader extends StatelessWidget {
   final String title;
   final List<String>? breadcrumbs;
   final VoidCallback? onMenuPressed;
+  final IconData? leadingIcon;
+  final VoidCallback? onLeadingPressed;
   final VoidCallback? onNotificationPressed;
   final VoidCallback? onProfilePressed;
 
@@ -23,6 +24,8 @@ class AppHeader extends StatelessWidget {
     required this.title,
     this.breadcrumbs,
     this.onMenuPressed,
+    this.leadingIcon,
+    this.onLeadingPressed,
     this.onNotificationPressed,
     this.onProfilePressed,
   });
@@ -51,14 +54,14 @@ class AppHeader extends StatelessWidget {
             // Mobile/Tablet menu button
             if (!responsive.isDesktop)
               IconButton(
-                onPressed: onMenuPressed,
+                onPressed: onLeadingPressed ?? onMenuPressed,
                 padding: EdgeInsets.zero,
                 constraints: BoxConstraints(
                   minWidth: responsive.value(mobile: 44, tablet: 48, desktop: 52),
                   minHeight: responsive.value(mobile: 44, tablet: 48, desktop: 52),
                 ),
                 icon: Icon(
-                  LucideIcons.menu,
+                  leadingIcon ?? LucideIcons.menu,
                   color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
                   size: responsive.isMobile ? 20 : 24,
                 ),
@@ -352,7 +355,7 @@ class AppHeader extends StatelessWidget {
     final responsive = Responsive(context);
     final store = StoreProvider.of<AppState>(context);
 
-    // If no notifications in store, seed demo data and load from API
+    // If no notifications in store, load from API
     if (store.state.notification.notifications.isEmpty) {
       _loadNotifications(store);
     }
@@ -474,7 +477,7 @@ class AppHeader extends StatelessWidget {
     );
   }
 
-  /// Load notifications from API with demo data fallback
+  /// Load notifications from API
   Future<void> _loadNotifications(dynamic store) async {
     store.dispatch(FetchNotificationsStart());
     try {
@@ -496,25 +499,11 @@ class AppHeader extends StatelessWidget {
           return;
         }
       }
-      // Fallback to demo data
-      _seedDemoNotifications(store);
+      store.dispatch(FetchNotificationsSuccess(const []));
     } catch (e) {
-      debugPrint('[Notifications] API error: $e – falling back to demo data');
-      _seedDemoNotifications(store);
+      debugPrint('[Notifications] API error: $e');
+      store.dispatch(FetchNotificationsSuccess(const []));
     }
-  }
-
-  void _seedDemoNotifications(dynamic store) {
-    final items = NotificationsDemo.notifications.map((e) {
-      return NotificationItem(
-        id: e['notification_id'] as String,
-        title: e['title'] as String,
-        message: e['message'] as String,
-        time: _formatNotifTime(e['created_at']),
-        read: e['is_read'] == true,
-      );
-    }).toList();
-    store.dispatch(FetchNotificationsSuccess(items));
   }
 
   static String _formatNotifTime(dynamic createdAt) {

@@ -12,7 +12,6 @@ import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
 import '../utils/error_handler.dart';
-import '../demo_data/additional_modules_demo.dart';
 
 const String _itrDraftKey = 'itr_manual_entry_draft';
 
@@ -24,9 +23,9 @@ class ITRPageFull extends StatefulWidget {
 }
 
 class _ITRPageFullState extends State<ITRPageFull> {
-  // START WITH DEMO DATA – never show blank
   bool _isLoading = true;
-  List<ITR> _itrs = ITRDemo.itrs.map((e) => ITR.fromJson(e)).toList();
+  String? _error;
+  List<ITR> _itrs = [];
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -37,11 +36,13 @@ class _ITRPageFullState extends State<ITRPageFull> {
   PlatformFile? _selectedFile;
   bool _isExtracting = false;
   bool _isUploading = false;
+  bool _prefillApplied = false;
+  String _defaultTab = 'recent';
+  String _prefillItrRef = '';
 
   @override
   void initState() {
     super.initState();
-    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadITRs();
     });
@@ -53,24 +54,23 @@ class _ITRPageFullState extends State<ITRPageFull> {
     super.dispose();
   }
 
-  void _seedDemoITRs() {
-    debugPrint('[ITR] API unavailable – falling back to demo data');
-    setState(() {
-      _itrs = ITRDemo.itrs.map((e) => ITR.fromJson(e)).toList();
-      _isLoading = false;
-    });
-  }
-
   Future<void> _loadITRs() async {
     setState(() {
       _isLoading = true;
+      _error = null;
     });
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProject?['project_id']?.toString() ??
         store.state.project.selectedProjectId ?? '';
 
     if (projectId.isEmpty) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _itrs = [];
+          _error = 'No project selected';
+        });
+      }
       return;
     }
 
@@ -80,21 +80,25 @@ class _ITRPageFullState extends State<ITRPageFull> {
       if (result['success'] == true) {
         final data = result['data'] as List;
         final loaded = data.map((e) => ITR.fromJson(e)).toList();
-        if (loaded.isEmpty) {
-          _seedDemoITRs();
-        } else {
-          setState(() {
-            _itrs = loaded;
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _itrs = loaded;
+          _isLoading = false;
+        });
       } else {
-        _seedDemoITRs();
+        setState(() {
+          _itrs = [];
+          _isLoading = false;
+          _error = result['error']?.toString() ?? 'Failed to load ITRs';
+        });
       }
     } catch (e) {
-      debugPrint('[ITR] API error: $e – falling back to demo data');
+      debugPrint('[ITR] API error: $e');
       if (!mounted) return;
-      _seedDemoITRs();
+      setState(() {
+        _itrs = [];
+        _isLoading = false;
+        _error = 'Failed to load ITRs';
+      });
     }
   }
 
@@ -128,6 +132,16 @@ class _ITRPageFullState extends State<ITRPageFull> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final responsive = Responsive(context);
     final isMobile = responsive.isMobile;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (!_prefillApplied && args is Map && args['challan_number'] != null) {
+      final challanNo = args['challan_number'].toString();
+      _prefillItrRef = challanNo;
+      _defaultTab = 'manual';
+      _prefillApplied = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showToast(context, 'Prefilled ITR ref from challan $challanNo');
+      });
+    }
 
     return StoreConnector<AppState, String?>(
       converter: (store) =>
@@ -170,7 +184,7 @@ class _ITRPageFullState extends State<ITRPageFull> {
               const SizedBox(height: 24),
               Expanded(
                 child: MadTabs(
-                  defaultTab: 'recent',
+                  defaultTab: _defaultTab,
                   tabs: [
                     MadTabItem(
                       id: 'upload',
@@ -357,6 +371,7 @@ class _ITRPageFullState extends State<ITRPageFull> {
     return _ITRManualEntryForm(
       projectId: projectId ?? '',
       isDark: isDark,
+      prefillItrRef: _prefillItrRef,
       onPreview: _showITRPreview,
       onSubmit: _submitITR,
     );
@@ -614,11 +629,13 @@ class _ITRPageFullState extends State<ITRPageFull> {
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
-              : _filteredITRs.isEmpty
-                  ? _buildEmptyState(isDark)
-                  : MadCard(
-                      child: Column(
-                        children: [
+              : _error != null
+                  ? _buildErrorState(isDark, _error!)
+                  : _filteredITRs.isEmpty
+                      ? _buildEmptyState(isDark)
+                      : MadCard(
+                          child: Column(
+                            children: [
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                             decoration: BoxDecoration(
@@ -757,6 +774,47 @@ class _ITRPageFullState extends State<ITRPageFull> {
               'Create an installation test report via Upload & Extract or Manual Entry',
               style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
               textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(bool isDark, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red.withOpacity(0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load ITRs',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: TextStyle(
+                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            MadButton(
+              text: 'Retry',
+              icon: LucideIcons.refreshCw,
+              onPressed: _loadITRs,
             ),
           ],
         ),
@@ -945,12 +1003,14 @@ class _ITRPageFullState extends State<ITRPageFull> {
 class _ITRManualEntryForm extends StatefulWidget {
   final String projectId;
   final bool isDark;
+  final String prefillItrRef;
   final void Function(Map<String, dynamic>) onPreview;
   final void Function(Map<String, dynamic>) onSubmit;
 
   const _ITRManualEntryForm({
     required this.projectId,
     required this.isDark,
+    required this.prefillItrRef,
     required this.onPreview,
     required this.onSubmit,
   });
@@ -1019,6 +1079,9 @@ class _ITRManualEntryFormState extends State<_ITRManualEntryForm> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _tryLoadDraft());
+    if (widget.prefillItrRef.isNotEmpty) {
+      _itrRefController.text = widget.prefillItrRef;
+    }
   }
 
   Future<void> _tryLoadDraft() async {
@@ -1061,6 +1124,11 @@ class _ITRManualEntryFormState extends State<_ITRManualEntryForm> {
         _readyForInspection = decoded['ready_for_inspection'] == true || decoded['ready_for_inspection'] == 'true';
         _resultCode = decoded['result_code']?.toString();
       });
+      if (_itrRefController.text.isEmpty && widget.prefillItrRef.isNotEmpty) {
+        setState(() {
+          _itrRefController.text = widget.prefillItrRef;
+        });
+      }
     } catch (_) {}
   }
 

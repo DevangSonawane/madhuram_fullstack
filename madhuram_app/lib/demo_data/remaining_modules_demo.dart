@@ -16,10 +16,10 @@ class ChallansDemo {
   ChallansDemo._();
 
   static List<Map<String, dynamic>> get challans => [
-    {'challan_id': '1', 'challan_no': 'DC-2024-001', 'vendor': 'ABC Suppliers Pvt Ltd', 'date': '2024-01-20', 'items': 5, 'status': 'Received', 'po_ref': 'PO-2024-001'},
-    {'challan_id': '2', 'challan_no': 'DC-2024-002', 'vendor': 'Metro Steel Works', 'date': '2024-01-25', 'items': 3, 'status': 'Pending', 'po_ref': 'PO-2024-003'},
-    {'challan_id': '3', 'challan_no': 'DC-2024-003', 'vendor': 'XYZ Traders', 'date': '2024-02-01', 'items': 8, 'status': 'Inspecting', 'po_ref': 'PO-2024-002'},
-    {'challan_id': '4', 'challan_no': 'DC-2024-004', 'vendor': 'Reliable Electricals', 'date': '2024-02-05', 'items': 12, 'status': 'Received', 'po_ref': 'PO-2024-004'},
+    {'dc_id': '1', 'challan_number': 'DC-2024-001', 'challan_date': '2024-01-20', 'po_number': 'PO-2024-001', 'items': [{'name': 'CPVC Pipe 2 inch', 'quantity': 10}], 'total_po_items': 1, 'total_challan_items': 1, 'status': 'completed'},
+    {'dc_id': '2', 'challan_number': 'DC-2024-002', 'challan_date': '2024-01-25', 'po_number': 'PO-2024-003', 'items': [{'name': 'Steel Rod 12mm', 'quantity': 5}], 'total_po_items': 2, 'total_challan_items': 1, 'status': 'incomplete'},
+    {'dc_id': '3', 'challan_number': 'DC-2024-003', 'challan_date': '2024-02-01', 'po_number': 'PO-2024-002', 'items': [{'name': 'Basin Mixer', 'quantity': 8}], 'total_po_items': 3, 'total_challan_items': 1, 'status': 'incomplete'},
+    {'dc_id': '4', 'challan_number': 'DC-2024-004', 'challan_date': '2024-02-05', 'po_number': 'PO-2024-004', 'items': [{'name': 'Electrical Cable 2.5mm', 'quantity': 12}], 'total_po_items': 1, 'total_challan_items': 1, 'status': 'completed'},
   ];
 }
 

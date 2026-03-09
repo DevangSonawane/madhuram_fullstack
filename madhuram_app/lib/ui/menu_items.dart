@@ -29,10 +29,6 @@ const _main = 'Main';
 const _projectManagement = 'Project Management';
 const _procurement = 'Procurement';
 const _deliveryInspection = 'Delivery & Inspection';
-const _billing = 'Billing';
-const _inventory = 'Inventory';
-const _documents = 'Documents';
-const _analytics = 'Analytics';
 
 /// Menu items matching React's menuItems.js exactly with same icons
 const menuItems = <MenuItem>[
@@ -72,18 +68,6 @@ const menuItems = <MenuItem>[
     icon: LucideIcons.layers,
   ),
   MenuItem(
-    title: 'Purchase Requests',
-    route: '/purchase-requests',
-    category: _procurement,
-    icon: LucideIcons.shoppingCart,
-  ),
-  MenuItem(
-    title: 'Vendor Comparison',
-    route: '/vendor-comparison',
-    category: _procurement,
-    icon: LucideIcons.arrowRightLeft,
-  ),
-  MenuItem(
     title: 'Purchase Orders',
     route: '/purchase-orders',
     category: _procurement,
@@ -102,86 +86,6 @@ const menuItems = <MenuItem>[
     route: '/challans',
     category: _deliveryInspection,
     icon: LucideIcons.truck,
-  ),
-  MenuItem(
-    title: 'MER',
-    route: '/mer',
-    category: _deliveryInspection,
-    icon: LucideIcons.fileCheck,
-  ),
-  MenuItem(
-    title: 'MIR',
-    route: '/mir',
-    category: _deliveryInspection,
-    icon: LucideIcons.eye,
-  ),
-  MenuItem(
-    title: 'ITR',
-    route: '/itr',
-    category: _deliveryInspection,
-    icon: LucideIcons.hammer,
-  ),
-  
-  // Billing
-  MenuItem(
-    title: 'Billing & Invoices',
-    route: '/billing',
-    category: _billing,
-    icon: LucideIcons.receipt,
-  ),
-  
-  // Inventory
-  MenuItem(
-    title: 'Stock Overview',
-    route: '/stock-areas',
-    category: _inventory,
-    icon: LucideIcons.warehouse,
-  ),
-  MenuItem(
-    title: 'Product Master',
-    route: '/materials',
-    category: _inventory,
-    icon: LucideIcons.package,
-  ),
-  MenuItem(
-    title: 'Stock Transfers',
-    route: '/stock-transfers',
-    category: _inventory,
-    icon: LucideIcons.arrowRightLeft,
-  ),
-  MenuItem(
-    title: 'Consumption',
-    route: '/consumption',
-    category: _inventory,
-    icon: LucideIcons.trendingDown,
-  ),
-  MenuItem(
-    title: 'Returns',
-    route: '/returns',
-    category: _inventory,
-    icon: LucideIcons.undo2,
-  ),
-  
-  // Documents
-  MenuItem(
-    title: 'Repository',
-    route: '/documents',
-    category: _documents,
-    icon: LucideIcons.folderOpen,
-  ),
-  
-  // Analytics
-  MenuItem(
-    title: 'Reports',
-    route: '/reports',
-    category: _analytics,
-    icon: Icons.bar_chart,
-  ),
-  MenuItem(
-    title: 'Audit Logs',
-    route: '/audit-logs',
-    category: _analytics,
-    icon: LucideIcons.history,
   ),
 ];
 

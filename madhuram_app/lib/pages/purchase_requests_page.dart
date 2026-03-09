@@ -193,6 +193,7 @@ class PurchaseRequestsPageFull extends StatefulWidget {
 class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
   bool _isLoading = false;
   List<PurchaseRequest> _requests = [];
+  String? _error;
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -214,20 +215,15 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
   }
 
   Future<void> _loadRequests() async {
-    setState(() => _isLoading = true);
-    
-    // Mock data
-    await Future.delayed(const Duration(milliseconds: 500));
-    
-    if (!mounted) return;
-    
     setState(() {
-      _requests = [
-        PurchaseRequest(id: '1', requestNo: 'PR-001', material: 'Cement OPC 53', quantity: 500, unit: 'Bags', requestedBy: 'John Doe', date: '2024-01-20', status: 'Pending', priority: 'High'),
-        PurchaseRequest(id: '2', requestNo: 'PR-002', material: 'PVC Pipe 4"', quantity: 200, unit: 'Meters', requestedBy: 'Jane Smith', date: '2024-01-22', status: 'Approved', priority: 'Medium'),
-        PurchaseRequest(id: '3', requestNo: 'PR-003', material: 'Steel Rods 12mm', quantity: 1000, unit: 'KG', requestedBy: 'Mike Johnson', date: '2024-01-23', status: 'Rejected', priority: 'Low'),
-      ];
+      _isLoading = true;
+      _error = null;
+    });
+    if (!mounted) return;
+    setState(() {
+      _requests = [];
       _isLoading = false;
+      _error = 'Purchase requests API not available';
     });
   }
 
@@ -440,11 +436,13 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredRequests.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : MadCard(
-                        child: Column(
-                          children: [
+                : _error != null
+                    ? _buildErrorState(isDark, _error!)
+                    : _filteredRequests.isEmpty
+                        ? _buildEmptyState(isDark)
+                        : MadCard(
+                            child: Column(
+                              children: [
                             // Table header
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -687,6 +685,29 @@ class _PurchaseRequestsPageFullState extends State<PurchaseRequestsPageFull> {
                 onPressed: () => _showRequestDialog(),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(bool isDark, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load purchase requests',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+            ),
+            const SizedBox(height: 8),
+            Text(message, style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), textAlign: TextAlign.center),
+            const SizedBox(height: 24),
+            MadButton(text: 'Retry', icon: LucideIcons.refreshCw, onPressed: _loadRequests),
           ],
         ),
       ),

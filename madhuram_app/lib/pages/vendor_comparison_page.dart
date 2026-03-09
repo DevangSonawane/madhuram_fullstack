@@ -33,8 +33,9 @@ class VendorComparisonPageFull extends StatefulWidget {
 }
 
 class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
-  List<String> _vendors = ['Astral Pipes', 'Supreme Pipes', 'Ashirvad Pipes'];
-  List<String> _products = ['CPVC Pipe 20mm', 'Ball Valve 1"', 'PVC Pipe 4"'];
+  List<String> _vendors = [];
+  List<String> _products = [];
+  String? _error;
 
   /// [productIndex][vendorIndex] -> cell
   late List<List<VendorProductCell>> _matrix;
@@ -42,32 +43,8 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
   @override
   void initState() {
     super.initState();
-    _initMockMatrix();
-  }
-
-  void _initMockMatrix() {
-    // Mock data: Vendors x Products
-    // Row = product, Col = vendor
-    _matrix = [
-      // CPVC Pipe 20mm -> Astral, Supreme, Ashirvad
-      [
-        const VendorProductCell(unitPrice: 45, deliveryDays: 5, paymentTerms: '30 days', warranty: '2 years'),
-        const VendorProductCell(unitPrice: 42, deliveryDays: 7, paymentTerms: '45 days', warranty: '2 years'),
-        const VendorProductCell(unitPrice: 48, deliveryDays: 3, paymentTerms: '15 days', warranty: '2 years'),
-      ],
-      // Ball Valve 1"
-      [
-        const VendorProductCell(unitPrice: 120, deliveryDays: 3, paymentTerms: '15 days', warranty: '1 year'),
-        const VendorProductCell(unitPrice: 115, deliveryDays: 5, paymentTerms: '30 days', warranty: '1 year'),
-        const VendorProductCell(unitPrice: 125, deliveryDays: 4, paymentTerms: '30 days', warranty: '2 years'),
-      ],
-      // PVC Pipe 4"
-      [
-        const VendorProductCell(unitPrice: 85, deliveryDays: 7, paymentTerms: '30 days', warranty: '2 years'),
-        const VendorProductCell(unitPrice: 90, deliveryDays: 5, paymentTerms: '15 days', warranty: '2 years'),
-        const VendorProductCell(unitPrice: 82, deliveryDays: 6, paymentTerms: '45 days', warranty: '2 years'),
-      ],
-    ];
+    _matrix = [];
+    _error = 'Vendor comparison API not available';
   }
 
   void _addVendor() {
@@ -146,6 +123,30 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
     final responsive = Responsive(context);
     final isMobile = responsive.isMobile;
 
+    if (_error != null) {
+      return ProtectedRoute(
+        title: 'Vendor Comparison',
+        route: '/vendor-comparison',
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(48),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 64, color: Colors.red.withOpacity(0.5)),
+                const SizedBox(height: 16),
+                Text(
+                  _error!,
+                  style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return ProtectedRoute(
       title: 'Vendor Comparison',
       route: '/vendor-comparison',
@@ -186,7 +187,7 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
                       text: 'Export PDF',
                       variant: ButtonVariant.outline,
                       size: ButtonSize.sm,
-                      onPressed: () => showToast(context, 'Export to PDF – placeholder'),
+                      onPressed: null,
                     ),
                     const SizedBox(width: 8),
                     MadButton(
@@ -194,7 +195,7 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
                       text: 'Export Excel',
                       variant: ButtonVariant.outline,
                       size: ButtonSize.sm,
-                      onPressed: () => showToast(context, 'Export to Excel – placeholder'),
+                      onPressed: null,
                     ),
                     const SizedBox(width: 8),
                     MadButton(
@@ -202,7 +203,7 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
                       text: 'Request New Quotes',
                       variant: ButtonVariant.outline,
                       size: ButtonSize.sm,
-                      onPressed: () => showToast(context, 'Request new quotes – placeholder'),
+                      onPressed: null,
                     ),
                   ],
                 ),
@@ -219,35 +220,35 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
                 text: 'Add Vendor',
                 variant: ButtonVariant.outline,
                 size: ButtonSize.sm,
-                onPressed: _addVendor,
+                onPressed: null,
               ),
               MadButton(
                 icon: LucideIcons.plus,
                 text: 'Add Product',
                 variant: ButtonVariant.outline,
                 size: ButtonSize.sm,
-                onPressed: _addProduct,
+                onPressed: null,
               ),
               if (isMobile)
                 MadButton(
                   icon: LucideIcons.fileDown,
                   size: ButtonSize.icon,
                   variant: ButtonVariant.outline,
-                  onPressed: () => showToast(context, 'Export PDF – placeholder'),
+                  onPressed: null,
                 ),
               if (isMobile)
                 MadButton(
                   icon: LucideIcons.fileSpreadsheet,
                   size: ButtonSize.icon,
                   variant: ButtonVariant.outline,
-                  onPressed: () => showToast(context, 'Export to Excel – placeholder'),
+                  onPressed: null,
                 ),
               if (isMobile)
                 MadButton(
                   icon: LucideIcons.send,
                   size: ButtonSize.icon,
                   variant: ButtonVariant.outline,
-                  onPressed: () => showToast(context, 'Request new quotes – placeholder'),
+                  onPressed: null,
                 ),
             ],
           ),

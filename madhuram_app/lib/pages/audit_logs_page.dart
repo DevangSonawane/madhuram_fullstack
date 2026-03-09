@@ -7,7 +7,6 @@ import '../store/app_state.dart';
 import '../services/api_client.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
-import '../demo_data/audit_logs_demo.dart';
 
 /// Audit log entry model (entity/action type tracking)
 class AuditLog {
@@ -63,11 +62,9 @@ class AuditLogsPageFull extends StatefulWidget {
 }
 
 class _AuditLogsPageFullState extends State<AuditLogsPageFull> {
-  // START WITH DEMO DATA – never show blank
   bool _isLoading = false;
-  List<AuditLog> _logs = AuditLogsDemo.logs
-      .map((e) => AuditLog.fromJson(e))
-      .toList();
+  String? _error;
+  List<AuditLog> _logs = [];
   String _searchQuery = '';
   String? _actionFilter; // CREATE, UPDATE, DELETE
   final _searchController = TextEditingController();
@@ -75,7 +72,6 @@ class _AuditLogsPageFullState extends State<AuditLogsPageFull> {
   @override
   void initState() {
     super.initState();
-    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadLogs());
   }
 
@@ -85,43 +81,46 @@ class _AuditLogsPageFullState extends State<AuditLogsPageFull> {
     super.dispose();
   }
 
-  /// Seed with demo data when API is unavailable
-  void _seedDemoData() {
-    debugPrint('[AuditLogs] API unavailable – falling back to demo data');
-    setState(() {
-      _logs = AuditLogsDemo.logs.map((e) => AuditLog.fromJson(e)).toList();
-      _isLoading = false;
-    });
-  }
-
   Future<void> _loadLogs() async {
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
     if (projectId.isEmpty) {
-      _seedDemoData();
+      setState(() {
+        _logs = [];
+        _isLoading = false;
+        _error = 'No project selected';
+      });
       return;
     }
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
     try {
       final result = await ApiClient.getAuditLogs(projectId);
       if (!mounted) return;
       if (result['success'] == true && result['data'] != null) {
         final data = result['data'] as List;
         final loaded = data.map((e) => AuditLog.fromJson(Map<String, dynamic>.from(e as Map))).toList();
-        if (loaded.isEmpty) {
-          _seedDemoData();
-        } else {
-          setState(() {
-            _logs = loaded;
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _logs = loaded;
+          _isLoading = false;
+        });
       } else {
-        _seedDemoData();
+        setState(() {
+          _logs = [];
+          _isLoading = false;
+          _error = result['error']?.toString() ?? 'Failed to load audit logs';
+        });
       }
     } catch (e) {
-      debugPrint('[AuditLogs] API error: $e – falling back to demo data');
+      debugPrint('[AuditLogs] API error: $e');
       if (!mounted) return;
-      _seedDemoData();
+      setState(() {
+        _logs = [];
+        _isLoading = false;
+        _error = 'Failed to load audit logs';
+      });
     }
   }
 
@@ -261,11 +260,13 @@ class _AuditLogsPageFullState extends State<AuditLogsPageFull> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredLogs.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : MadCard(
-                        child: Column(
-                          children: [
+                : _error != null
+                    ? _buildErrorState(isDark, _error!)
+                    : _filteredLogs.isEmpty
+                        ? _buildEmptyState(isDark)
+                        : MadCard(
+                            child: Column(
+                              children: [
                             // Table header
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -429,6 +430,33 @@ class _AuditLogsPageFullState extends State<AuditLogsPageFull> {
                 color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(bool isDark, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load audit logs',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            MadButton(text: 'Retry', icon: LucideIcons.refreshCw, onPressed: _loadLogs),
           ],
         ),
       ),

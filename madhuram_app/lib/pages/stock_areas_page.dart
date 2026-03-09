@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
+import '../services/api_client.dart';
 
 /// Hierarchical models for Warehouse -> Zone -> Rack
 class WarehouseModel {
@@ -63,6 +64,7 @@ class StockAreasPage extends StatefulWidget {
 
 class _StockAreasPageState extends State<StockAreasPage> {
   bool _isLoading = false;
+  String? _error;
   String _searchQuery = '';
   final _searchController = TextEditingController();
 
@@ -84,53 +86,53 @@ class _StockAreasPageState extends State<StockAreasPage> {
     super.dispose();
   }
 
-  void _loadData() {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
-      _warehouses = [
-        const WarehouseModel(
-          id: 'wh1',
-          name: 'Main Warehouse',
-          location: 'Site A',
-          status: 'Active',
-          totalCapacity: 10000,
-          currentStock: 7200,
-        ),
-        const WarehouseModel(
-          id: 'wh2',
-          name: 'Secondary Store',
-          location: 'Site B',
-          status: 'Active',
-          totalCapacity: 5000,
-          currentStock: 2100,
-        ),
-        const WarehouseModel(
-          id: 'wh3',
-          name: 'Overflow Storage',
-          location: 'Site A',
-          status: 'Active',
-          totalCapacity: 3000,
-          currentStock: 450,
-        ),
-      ];
-      _zones = [
-        const ZoneModel(id: 'zA', name: 'Zone A', warehouseId: 'wh1', rackIds: ['A-1', 'A-2', 'A-3']),
-        const ZoneModel(id: 'zB', name: 'Zone B', warehouseId: 'wh1', rackIds: ['B-1', 'B-2']),
-        const ZoneModel(id: 'zC', name: 'Zone C', warehouseId: 'wh2', rackIds: ['C-1', 'C-2']),
-        const ZoneModel(id: 'zD', name: 'Zone D', warehouseId: 'wh3', rackIds: ['D-1']),
-      ];
-      _racks = [
-        const RackModel(id: 'A-1', name: 'A-1', zoneId: 'zA'),
-        const RackModel(id: 'A-2', name: 'A-2', zoneId: 'zA'),
-        const RackModel(id: 'A-3', name: 'A-3', zoneId: 'zA'),
-        const RackModel(id: 'B-1', name: 'B-1', zoneId: 'zB'),
-        const RackModel(id: 'B-2', name: 'B-2', zoneId: 'zB'),
-        const RackModel(id: 'C-1', name: 'C-1', zoneId: 'zC'),
-        const RackModel(id: 'C-2', name: 'C-2', zoneId: 'zC'),
-        const RackModel(id: 'D-1', name: 'D-1', zoneId: 'zD'),
-      ];
-      _isLoading = false;
+      _error = null;
     });
+    try {
+      final result = await ApiClient.getStockAreas();
+      if (!mounted) return;
+      if (result['success'] == true) {
+        final data = result['data'];
+        final list = data is List ? data : <dynamic>[];
+        final warehouses = list.map((e) {
+          final map = Map<String, dynamic>.from(e as Map);
+          return WarehouseModel(
+            id: (map['area_id'] ?? map['id'] ?? '').toString(),
+            name: map['name']?.toString() ?? 'Unnamed Area',
+            location: map['location']?.toString() ?? '',
+            status: map['status']?.toString() ?? 'Active',
+            totalCapacity: (map['capacity'] as num?)?.toDouble() ?? 0.0,
+            currentStock: (map['current_stock'] as num?)?.toDouble() ?? 0.0,
+          );
+        }).toList();
+        setState(() {
+          _warehouses = warehouses;
+          _zones = [];
+          _racks = [];
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _warehouses = [];
+          _zones = [];
+          _racks = [];
+          _isLoading = false;
+          _error = result['error']?.toString() ?? 'Failed to load stock areas';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _warehouses = [];
+        _zones = [];
+        _racks = [];
+        _isLoading = false;
+        _error = 'Failed to load stock areas';
+      });
+    }
   }
 
   List<WarehouseModel> get _filteredWarehouses {
@@ -202,7 +204,7 @@ class _StockAreasPageState extends State<StockAreasPage> {
                 MadButton(
                   text: 'Add Warehouse',
                   icon: LucideIcons.plus,
-                  onPressed: () => _showAddWarehouseDialog(),
+                  onPressed: null,
                 ),
             ],
           ),
@@ -265,7 +267,7 @@ class _StockAreasPageState extends State<StockAreasPage> {
                 MadButton(
                   icon: LucideIcons.plus,
                   size: ButtonSize.icon,
-                  onPressed: () => _showAddWarehouseDialog(),
+                  onPressed: null,
                 ),
               ],
             ],
@@ -275,13 +277,15 @@ class _StockAreasPageState extends State<StockAreasPage> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredWarehouses.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : ListView.builder(
-                        itemCount: _filteredWarehouses.length,
-                        itemBuilder: (context, index) =>
-                            _buildWarehouseExpansion(_filteredWarehouses[index], isDark),
-                      ),
+                : _error != null
+                    ? _buildErrorState(isDark, _error!)
+                    : _filteredWarehouses.isEmpty
+                        ? _buildEmptyState(isDark)
+                        : ListView.builder(
+                            itemCount: _filteredWarehouses.length,
+                            itemBuilder: (context, index) =>
+                                _buildWarehouseExpansion(_filteredWarehouses[index], isDark),
+                          ),
           ),
         ],
       ),
@@ -488,9 +492,32 @@ class _StockAreasPageState extends State<StockAreasPage> {
               MadButton(
                 text: 'Add Warehouse',
                 icon: LucideIcons.plus,
-                onPressed: () => _showAddWarehouseDialog(),
+                onPressed: null,
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(bool isDark, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load stock areas',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+            ),
+            const SizedBox(height: 8),
+            Text(message, style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), textAlign: TextAlign.center),
+            const SizedBox(height: 24),
+            MadButton(text: 'Retry', icon: LucideIcons.refreshCw, onPressed: _loadData),
           ],
         ),
       ),

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../theme/app_theme.dart';
@@ -219,34 +221,42 @@ class MadListSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: List.generate(itemCount, (index) {
-        return Container(
-          height: itemHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              if (showAvatar) ...[
-                MadSkeleton.circle(size: 40),
-                const SizedBox(width: 12),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    MadSkeleton.text(width: 180, height: 16),
-                    const SizedBox(height: 8),
-                    MadSkeleton.text(width: 120, height: 12),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final visibleCount = constraints.maxHeight.isFinite
+            ? math.max(1, math.min(itemCount, (constraints.maxHeight / itemHeight).floor()))
+            : itemCount;
+
+        return Column(
+          children: List.generate(visibleCount, (index) {
+            return Container(
+              height: itemHeight,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  if (showAvatar) ...[
+                    MadSkeleton.circle(size: 40),
+                    const SizedBox(width: 12),
                   ],
-                ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        MadSkeleton.text(width: 180, height: 16),
+                        const SizedBox(height: 8),
+                        MadSkeleton.text(width: 120, height: 12),
+                      ],
+                    ),
+                  ),
+                  if (showAction)
+                    MadSkeleton.rect(width: 60, height: 32, borderRadius: 6),
+                ],
               ),
-              if (showAction)
-                MadSkeleton.rect(width: 60, height: 32, borderRadius: 6),
-            ],
-          ),
+            );
+          }),
         );
-      }),
+      },
     );
   }
 }

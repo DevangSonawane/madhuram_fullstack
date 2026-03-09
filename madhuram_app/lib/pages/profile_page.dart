@@ -13,7 +13,6 @@ import '../components/ui/mad_input.dart';
 import '../components/ui/mad_select.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
-import '../demo_data/settings_demo.dart';
 
 /// Profile page - Responsive version
 class ProfilePage extends StatefulWidget {
@@ -25,11 +24,9 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  // START WITH DEMO DATA – never show blank
-  List<User> _users = SettingsDemo.users
-      .map((e) => User.fromJson(e))
-      .toList();
+  List<User> _users = [];
   bool _loadingUsers = false;
+  String? _usersError;
   final TextEditingController _userSearchController = TextEditingController();
   static const List<MadSelectOption<String>> _roleOptions = [
     MadSelectOption(value: 'admin', label: 'Administrator'),
@@ -42,7 +39,6 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    // Try real API in background; demo data already visible
     _loadUsers();
   }
 
@@ -53,38 +49,36 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
     super.dispose();
   }
 
-  /// Seed with demo users when API is unavailable
-  void _seedDemoUsers() {
-    debugPrint('[Profile] Users API unavailable – falling back to demo data');
-    setState(() {
-      _users = SettingsDemo.users.map((e) => User.fromJson(e)).toList();
-      _loadingUsers = false;
-    });
-  }
-
   Future<void> _loadUsers() async {
-    setState(() => _loadingUsers = true);
+    setState(() {
+      _loadingUsers = true;
+      _usersError = null;
+    });
     try {
       final result = await ApiClient.getUsers();
       if (!mounted) return;
       if (result['success'] == true) {
         final data = result['data'] as List;
         final loaded = data.map((e) => User.fromJson(e)).toList();
-        if (loaded.isEmpty) {
-          _seedDemoUsers();
-        } else {
-          setState(() {
-            _users = loaded;
-            _loadingUsers = false;
-          });
-        }
+        setState(() {
+          _users = loaded;
+          _loadingUsers = false;
+        });
       } else {
-        _seedDemoUsers();
+        setState(() {
+          _users = [];
+          _loadingUsers = false;
+          _usersError = result['error']?.toString() ?? 'Failed to load users';
+        });
       }
     } catch (e) {
-      debugPrint('[Profile] Users API error: $e – falling back to demo data');
+      debugPrint('[Profile] Users API error: $e');
       if (!mounted) return;
-      _seedDemoUsers();
+      setState(() {
+        _users = [];
+        _loadingUsers = false;
+        _usersError = 'Failed to load users';
+      });
     }
   }
 
@@ -184,20 +178,10 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
     return StoreConnector<AppState, AuthState>(
       converter: (store) => store.state.auth,
       builder: (context, auth) {
-        // Use demo user data if auth state is empty
-        final demoUser = SettingsDemo.demoUser;
-        final userName = auth.userName ?? demoUser['name'] as String;
-        final userEmail = auth.userEmail ?? demoUser['email'] as String;
-        final userPhone = auth.userPhone ?? demoUser['phone_number'] as String;
-        final userRole = auth.userRole ?? demoUser['role'] as String;
-
-        // Create a merged auth state that has demo values as fallback
-        final effectiveAuth = auth.user != null
-            ? auth
-            : auth.copyWith(
-                user: demoUser,
-                isAuthenticated: true,
-              );
+        final userName = auth.userName ?? '—';
+        final userEmail = auth.userEmail ?? '—';
+        final userPhone = auth.userPhone ?? '—';
+        final userRole = auth.userRole ?? '';
 
         return SingleChildScrollView(
           child: Column(
@@ -212,17 +196,17 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
                       if (responsive.isMobile)
                         Column(
                           children: [
-                            _buildAvatar(effectiveAuth, responsive),
+                            _buildAvatar(auth, responsive),
                             const SizedBox(height: 16),
-                            _buildProfileInfo(effectiveAuth, isDark, responsive, centered: true),
+                            _buildProfileInfo(auth, isDark, responsive, centered: true),
                           ],
                         )
                       else
                         Row(
                           children: [
-                            _buildAvatar(effectiveAuth, responsive),
+                            _buildAvatar(auth, responsive),
                             SizedBox(width: responsive.value(mobile: 16, tablet: 20, desktop: 24)),
-                            Expanded(child: _buildProfileInfo(effectiveAuth, isDark, responsive)),
+                            Expanded(child: _buildProfileInfo(auth, isDark, responsive)),
                           ],
                         ),
                       SizedBox(height: responsive.value(mobile: 24, tablet: 28, desktop: 32)),
@@ -262,8 +246,8 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
                         ),
                       ),
                       const SizedBox(height: 16),
-                      _buildInfoRow('Version', SettingsDemo.appVersion, isDark, responsive),
-                      _buildInfoRow('Build', SettingsDemo.buildNumber, isDark, responsive),
+                      _buildInfoRow('Version', 'Unknown', isDark, responsive),
+                      _buildInfoRow('Build', 'Unknown', isDark, responsive),
                       _buildInfoRow('Platform', 'Flutter', isDark, responsive),
                     ],
                   ),
@@ -480,6 +464,38 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
 
         if (_loadingUsers) {
           return const Center(child: CircularProgressIndicator());
+        }
+        if (_usersError != null) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: responsive.value(mobile: 48, tablet: 56, desktop: 64),
+                    color: Colors.red.withOpacity(0.5),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _usersError!,
+                    style: TextStyle(
+                      fontSize: responsive.value(mobile: 14, tablet: 15, desktop: 16),
+                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  MadButton(
+                    text: 'Retry',
+                    size: ButtonSize.sm,
+                    onPressed: _loadUsers,
+                  ),
+                ],
+              ),
+            ),
+          );
         }
 
         return Column(

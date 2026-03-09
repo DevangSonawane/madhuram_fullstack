@@ -3,15 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:http/http.dart' as http;
 import '../theme/app_theme.dart';
 import '../store/app_state.dart';
 import '../store/project_actions.dart';
 import '../services/api_client.dart';
 import '../services/auth_storage.dart';
+import '../services/file_service.dart';
+import '../services/work_order_extractor.dart';
 import '../components/ui/components.dart';
 import '../utils/responsive.dart';
 import '../models/project.dart';
-import '../demo_data/additional_modules_demo.dart';
 
 /// Project Selection page - Responsive version
 class ProjectSelectionPage extends StatefulWidget {
@@ -22,19 +24,15 @@ class ProjectSelectionPage extends StatefulWidget {
 }
 
 class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
-  // START WITH DEMO DATA – never show blank
   bool _isLoading = false;
   String? _error;
   String _searchQuery = '';
-  List<Project> _projects = ProjectsDemo.projects
-      .map((e) => Project.fromJson(e))
-      .toList();
+  List<Project> _projects = [];
   final _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAuthAndLoadProjects();
     });
@@ -63,10 +61,12 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
   Future<void> _loadProjects() async {
     if (!mounted) return;
     
-    // Don't set _isLoading = true; demo data is already visible.
-    // Just silently try the API in background.
     final store = StoreProvider.of<AppState>(context);
     store.dispatch(FetchProjectsStart());
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
     try {
       final result = await ApiClient.getProjects();
@@ -91,20 +91,21 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
           _error = null;
         });
       } else {
-        debugPrint('[ProjectSelection] API returned failure – keeping demo data');
         store.dispatch(FetchProjectsFailure('API failure'));
         setState(() {
+          _projects = [];
           _isLoading = false;
-          _error = null; // Keep demo data visible, don't show error
+          _error = result['error']?.toString() ?? 'Failed to load projects';
         });
       }
     } catch (e) {
-      debugPrint('[ProjectSelection] API error: $e – keeping demo data');
+      debugPrint('[ProjectSelection] API error: $e');
       if (!mounted) return;
       store.dispatch(FetchProjectsFailure('$e'));
       setState(() {
+        _projects = [];
         _isLoading = false;
-        _error = null; // Keep demo data visible, don't show error
+        _error = 'Failed to load projects';
       });
     }
   }
@@ -132,9 +133,18 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
   }
 
   List<Project> get _filteredProjects {
-    if (_searchQuery.isEmpty) return _projects;
+    var list = _projects;
+    if (_currentUserRole == 'project_manager' && _currentUserId != null) {
+      list = list.where((p) {
+        final raw = p.rawData ?? const {};
+        final managerId = raw['manager_id']?.toString() ?? raw['managerId']?.toString();
+        if (managerId == null || managerId.isEmpty) return true;
+        return managerId == _currentUserId;
+      }).toList();
+    }
+    if (_searchQuery.isEmpty) return list;
     final query = _searchQuery.toLowerCase();
-    return _projects.where((p) {
+    return list.where((p) {
       return p.name.toLowerCase().contains(query) ||
           (p.client?.toLowerCase().contains(query) ?? false) ||
           (p.location?.toLowerCase().contains(query) ?? false);
@@ -148,6 +158,8 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
         isAuthenticated: store.state.auth.isAuthenticated,
         userName: store.state.auth.userName ?? 'User',
         isAdmin: store.state.auth.isAdmin,
+        userId: store.state.auth.user?['id']?.toString() ?? store.state.auth.user?['user_id']?.toString(),
+        userRole: store.state.auth.userRole,
       ),
       builder: (context, vm) {
         // Check auth
@@ -169,6 +181,8 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final responsive = Responsive(context);
+    _currentUserRole = vm.userRole;
+    _currentUserId = vm.userId;
 
     return Scaffold(
       backgroundColor: isDark ? AppTheme.darkBackground : AppTheme.lightBackground,
@@ -206,13 +220,25 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                         ),
                       ),
                       const Spacer(),
-                      if (vm.isAdmin)
+                      Row(
+                        children: [
+                          MadButton(
+                            icon: LucideIcons.boxes,
+                            text: responsive.isMobile ? null : 'Add Inventory',
+                            onPressed: () => Navigator.pushNamed(context, '/inventory/add'),
+                            variant: ButtonVariant.outline,
+                            size: responsive.isMobile ? ButtonSize.icon : ButtonSize.md,
+                          ),
+                          const SizedBox(width: 8),
+                          if (vm.isAdmin)
                         MadButton(
                           icon: LucideIcons.plus,
                           text: responsive.isMobile ? null : 'New Project',
                           onPressed: () => _showCreateProjectDialog(),
                           size: responsive.isMobile ? ButtonSize.icon : ButtonSize.md,
                         ),
+                        ],
+                      ),
                     ],
                   ),
                   SizedBox(height: responsive.value(mobile: 24, tablet: 28, desktop: 32)),
@@ -329,7 +355,8 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
 
     final crossAxisCount = responsive.value(mobile: 1, tablet: 2, desktop: responsive.screenWidth > 1200 ? 3 : 2);
     final spacing = responsive.value(mobile: 16.0, tablet: 20.0, desktop: 24.0);
-    final aspectRatio = responsive.value(mobile: 1.6, tablet: 1.4, desktop: 1.3);
+    // Keep cards tall enough on smaller screens so fixed footer/meta rows do not overflow.
+    final aspectRatio = responsive.value(mobile: 1.45, tablet: 1.35, desktop: 1.3);
 
     return RefreshIndicator(
       onRefresh: _loadProjects,
@@ -350,11 +377,14 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
   }
 
   Widget _buildProjectCard(Project project, bool isDark, Responsive responsive, bool isAdmin) {
+    final workOrderFile = project.rawData?['work_order_file'] ??
+        project.rawData?['work_order_file_url'] ??
+        project.rawData?['workOrderFile'];
     return MadCard(
       hoverable: true,
       onTap: () => _selectProject(project),
       child: Padding(
-        padding: EdgeInsets.all(responsive.value(mobile: 16, tablet: 20, desktop: 24)),
+        padding: EdgeInsets.all(responsive.value(mobile: 14, tablet: 20, desktop: 24)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -394,7 +424,7 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: responsive.value(mobile: 2, tablet: 4, desktop: 6)),
             Text(
               project.client ?? '',
               style: TextStyle(
@@ -419,6 +449,15 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
               isDark: isDark,
               responsive: responsive,
             ),
+            if ((workOrderFile ?? '').toString().isNotEmpty) ...[
+              SizedBox(height: responsive.value(mobile: 6, tablet: 7, desktop: 8)),
+              _buildInfoRow(
+                icon: LucideIcons.fileText,
+                value: 'Work order attached',
+                isDark: isDark,
+                responsive: responsive,
+              ),
+            ],
             if (project.estimateValue != null) ...[
               SizedBox(height: responsive.value(mobile: 8, tablet: 10, desktop: 12)),
               Text(
@@ -549,18 +588,27 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
     final nameController = TextEditingController();
     final clientController = TextEditingController();
     final locationController = TextEditingController();
+    final startDateController = TextEditingController();
+    final estimateValueController = TextEditingController();
+    final woNumberController = TextEditingController();
 
     File? workOrderFile;
     File? masFile;
     String? workOrderFileName;
     String? masFileName;
+    bool extracting = false;
+    bool compressing = false;
+    String? extractError;
+    WorkOrderExtractionResult? extracted;
 
+    void Function(void Function())? dialogSetState;
     MadFormDialog.show(
       context: context,
       title: 'Create New Project',
       maxWidth: 520,
       content: StatefulBuilder(
         builder: (context, setDialogState) {
+          dialogSetState = setDialogState;
           return SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -583,6 +631,32 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                   labelText: 'Location',
                   hintText: 'Enter location',
                 ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: MadInput(
+                        controller: startDateController,
+                        labelText: 'Start Date',
+                        hintText: 'YYYY-MM-DD',
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: MadInput(
+                        controller: estimateValueController,
+                        labelText: 'Estimate Value',
+                        hintText: '₹',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                MadInput(
+                  controller: woNumberController,
+                  labelText: 'WO Number',
+                  hintText: 'Work order number',
+                ),
                 const SizedBox(height: 20),
                 const Text(
                   'Work Order File (PDF)',
@@ -599,12 +673,42 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                       onPressed: () async {
                         final result = await FilePicker.platform.pickFiles(
                           type: FileType.custom,
-                          allowedExtensions: ['pdf'],
+                          allowedExtensions: ['pdf', 'csv', 'xlsx', 'xls'],
                           withData: false,
                         );
                         if (result != null && result.files.isNotEmpty && result.files.single.path != null) {
                           workOrderFile = File(result.files.single.path!);
                           workOrderFileName = result.files.single.name;
+                          extractError = null;
+                          if (workOrderFileName!.toLowerCase().endsWith('.pdf')) {
+                            extracting = true;
+                            setDialogState(() {});
+                            final res = await WorkOrderExtractor.extractFromFile(workOrderFile!);
+                            extracting = false;
+                            if (res.success) {
+                              extracted = res;
+                              if (nameController.text.trim().isEmpty && res.projectName.isNotEmpty) {
+                                nameController.text = res.projectName;
+                              }
+                              if (clientController.text.trim().isEmpty && res.clientName.isNotEmpty) {
+                                clientController.text = res.clientName;
+                              }
+                              if (locationController.text.trim().isEmpty && res.location.isNotEmpty) {
+                                locationController.text = res.location;
+                              }
+                              if (startDateController.text.trim().isEmpty && res.startDate.isNotEmpty) {
+                                startDateController.text = res.startDate;
+                              }
+                              if (estimateValueController.text.trim().isEmpty && res.estimateValue.isNotEmpty) {
+                                estimateValueController.text = res.estimateValue;
+                              }
+                              if (woNumberController.text.trim().isEmpty && res.woNumber.isNotEmpty) {
+                                woNumberController.text = res.woNumber;
+                              }
+                            } else {
+                              extractError = res.error ?? 'Failed to extract work order';
+                            }
+                          }
                           setDialogState(() {});
                         }
                       },
@@ -626,6 +730,36 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                     ],
                   ],
                 ),
+                if (extracting) ...[
+                  const SizedBox(height: 8),
+                  const LinearProgressIndicator(),
+                ],
+                if (extractError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    extractError!,
+                    style: const TextStyle(fontSize: 12, color: Colors.red),
+                  ),
+                ],
+                if (extracted != null) ...[
+                  const SizedBox(height: 12),
+                  MadButton(
+                    text: 'Apply Extracted Values',
+                    icon: LucideIcons.check,
+                    variant: ButtonVariant.outline,
+                    size: ButtonSize.sm,
+                    onPressed: () {
+                      final res = extracted!;
+                      if (res.projectName.isNotEmpty) nameController.text = res.projectName;
+                      if (res.clientName.isNotEmpty) clientController.text = res.clientName;
+                      if (res.location.isNotEmpty) locationController.text = res.location;
+                      if (res.startDate.isNotEmpty) startDateController.text = res.startDate;
+                      if (res.estimateValue.isNotEmpty) estimateValueController.text = res.estimateValue;
+                      if (res.woNumber.isNotEmpty) woNumberController.text = res.woNumber;
+                      setDialogState(() {});
+                    },
+                  ),
+                ],
                 const SizedBox(height: 16),
                 const Text(
                   'MAS File',
@@ -668,6 +802,10 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                     ],
                   ],
                 ),
+                if (compressing) ...[
+                  const SizedBox(height: 8),
+                  const LinearProgressIndicator(),
+                ],
               ],
             ),
           );
@@ -685,24 +823,43 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
             final projectName = nameController.text.trim();
             final clientName = clientController.text.trim();
             final location = locationController.text.trim();
+            final startDate = startDateController.text.trim();
+            final estimateValue = estimateValueController.text.trim();
+            final woNumber = woNumberController.text.trim();
             if (projectName.isEmpty) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Please enter project name')),
               );
               return;
             }
-            Navigator.of(context).pop();
-
+            dialogSetState?.call(() => compressing = true);
             final projectData = {
               'project_name': projectName,
               'client_name': clientName,
               'location': location,
-              'project_startdate': '',
+              'project_startdate': startDate,
               'floor': '',
-              'estimate_value': '',
-              'wo_number': '',
+              'estimate_value': estimateValue,
+              'wo_number': woNumber,
               'work_order_information': '',
             };
+
+            if (workOrderFile != null) {
+              try {
+                final size = await workOrderFile!.length();
+                if (size > 10 * 1024 * 1024) {
+                  final result = await ApiClient.compressFile(workOrderFile!);
+                  if (result['success'] == true && result['data'] is Map) {
+                    final data = result['data'] as Map;
+                    final url = data['url']?.toString();
+                    if (url != null && url.isNotEmpty) {
+                      final file = await _downloadCompressedFile(url, workOrderFile!.path.split('/').last);
+                      if (file != null) workOrderFile = file;
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
 
             Map<String, dynamic> result;
             if (workOrderFile != null || masFile != null) {
@@ -716,11 +873,16 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                 'project_name': projectName,
                 'client_name': clientName,
                 'location': location,
+                'project_startdate': startDate,
+                'estimate_value': estimateValue,
+                'wo_number': woNumber,
               });
             }
 
             if (!mounted) return;
+            dialogSetState?.call(() => compressing = false);
             if (result['success'] == true) {
+              Navigator.of(context).pop();
               await _loadProjects();
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -735,16 +897,42 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
       ],
     );
   }
+
+  String? _currentUserRole;
+  String? _currentUserId;
+
+  Future<File?> _downloadCompressedFile(String url, String filename) async {
+    try {
+      final token = await AuthStorage.getToken();
+      final headers = <String, String>{};
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+      final uri = Uri.parse(url.startsWith('http') ? url : ApiClient.getApiFileUrl(url));
+      final response = await http.get(uri, headers: headers);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final dir = await FileService.getTempDirectory();
+        final file = File('${dir.path}/$filename');
+        await file.writeAsBytes(response.bodyBytes);
+        return file;
+      }
+    } catch (_) {}
+    return null;
+  }
 }
 
 class _ProjectSelectionViewModel {
   final bool isAuthenticated;
   final String userName;
   final bool isAdmin;
+  final String? userId;
+  final String? userRole;
 
   _ProjectSelectionViewModel({
     required this.isAuthenticated,
     required this.userName,
     required this.isAdmin,
+    required this.userId,
+    required this.userRole,
   });
 }

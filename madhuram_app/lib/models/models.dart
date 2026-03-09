@@ -1,6 +1,7 @@
 // Export all models from a single file
 export 'user.dart';
 export 'project.dart';
+export 'inventory.dart';
 export 'boq.dart';
 export 'purchase_order.dart';
 export 'mir.dart';

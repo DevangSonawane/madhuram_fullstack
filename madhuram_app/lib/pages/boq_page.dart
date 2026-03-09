@@ -12,11 +12,9 @@ import '../components/ui/mad_card.dart';
 import '../components/ui/mad_button.dart';
 import '../components/ui/mad_badge.dart';
 import '../components/ui/mad_input.dart';
-import '../components/ui/mad_dropdown_menu.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/error_handler.dart';
 import '../components/ui/mad_skeleton.dart';
-import '../demo_data/additional_modules_demo.dart';
 import '../utils/responsive.dart';
 
 /// BOQ Management page matching React's BOQ.jsx
@@ -27,12 +25,177 @@ class BOQPage extends StatefulWidget {
   State<BOQPage> createState() => _BOQPageState();
 }
 
+class _AddBOQItemPage extends StatefulWidget {
+  final String projectId;
+
+  const _AddBOQItemPage({required this.projectId});
+
+  @override
+  State<_AddBOQItemPage> createState() => _AddBOQItemPageState();
+}
+
+class _AddBOQItemPageState extends State<_AddBOQItemPage> {
+  final _itemCodeController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _categoryController = TextEditingController();
+  final _quantityController = TextEditingController();
+  final _unitController = TextEditingController();
+  final _rateController = TextEditingController();
+  final _floorController = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _itemCodeController.dispose();
+    _descriptionController.dispose();
+    _categoryController.dispose();
+    _quantityController.dispose();
+    _unitController.dispose();
+    _rateController.dispose();
+    _floorController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    final quantity = double.tryParse(_quantityController.text.trim()) ?? 0;
+    final rate = double.tryParse(_rateController.text.trim()) ?? 0;
+    final amount = quantity * rate;
+
+    final data = {
+      'project_id': widget.projectId,
+      'item_code': _itemCodeController.text.trim(),
+      'description': _descriptionController.text.trim(),
+      'category': _categoryController.text.trim(),
+      'floor': _floorController.text.trim(),
+      'quantity': quantity.toString(),
+      'unit': _unitController.text.trim(),
+      'rate': rate.toString(),
+      'amount': amount.toString(),
+    };
+
+    final result = await ApiClient.createBOQ(data);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (result['success'] == true) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ErrorHandler.getMessage(result['error'] ?? 'Failed to add item'))),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final responsive = Responsive(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add BOQ Item'),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(responsive.value(mobile: 16, tablet: 20, desktop: 24)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MadCard(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        MadInput(
+                          controller: _itemCodeController,
+                          labelText: 'Item Code',
+                          hintText: 'Enter item code',
+                        ),
+                        const SizedBox(height: 16),
+                        MadInput(
+                          controller: _descriptionController,
+                          labelText: 'Description',
+                          hintText: 'Enter description',
+                        ),
+                        const SizedBox(height: 16),
+                        MadInput(
+                          controller: _categoryController,
+                          labelText: 'Category',
+                          hintText: 'Enter category',
+                        ),
+                        const SizedBox(height: 16),
+                        MadInput(
+                          controller: _floorController,
+                          labelText: 'Floor',
+                          hintText: 'Enter floor',
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: MadInput(
+                                controller: _quantityController,
+                                labelText: 'Quantity',
+                                hintText: '0',
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: MadInput(
+                                controller: _unitController,
+                                labelText: 'Unit',
+                                hintText: 'e.g. KG',
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        MadInput(
+                          controller: _rateController,
+                          labelText: 'Rate',
+                          hintText: '0.00',
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: MadButton(
+                        text: 'Cancel',
+                        variant: ButtonVariant.outline,
+                        onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: MadButton(
+                        text: _saving ? 'Saving...' : 'Add Item',
+                        icon: LucideIcons.plus,
+                        disabled: _saving,
+                        onPressed: _save,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _BOQPageState extends State<BOQPage> {
-  // START WITH DEMO DATA – never show blank
   bool _isLoading = true;
-  List<BOQItem> _items = BOQDemo.items
-      .map((e) => BOQItem.fromJson(e))
-      .toList();
+  String? _error;
+  List<BOQItem> _items = [];
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -42,7 +205,6 @@ class _BOQPageState extends State<BOQPage> {
   @override
   void initState() {
     super.initState();
-    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadBOQItems();
     });
@@ -54,23 +216,22 @@ class _BOQPageState extends State<BOQPage> {
     super.dispose();
   }
 
-  void _seedDemoData() {
-    debugPrint('[BOQ] API unavailable – falling back to demo data');
-    setState(() {
-      _items = BOQDemo.items.map((e) => BOQItem.fromJson(e)).toList();
-      _isLoading = false;
-    });
-  }
-
   Future<void> _loadBOQItems() async {
     setState(() {
       _isLoading = true;
+      _error = null;
     });
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
     
     if (projectId.isEmpty) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _items = [];
+          _error = 'No project selected';
+        });
+      }
       return;
     }
     
@@ -80,21 +241,25 @@ class _BOQPageState extends State<BOQPage> {
       if (result['success'] == true) {
         final data = result['data'] as List;
         final loaded = data.map((e) => BOQItem.fromJson(e)).toList();
-        if (loaded.isEmpty) {
-          _seedDemoData();
-        } else {
-          setState(() {
-            _items = loaded;
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _items = loaded;
+          _isLoading = false;
+        });
       } else {
-        _seedDemoData();
+        setState(() {
+          _items = [];
+          _isLoading = false;
+          _error = result['error']?.toString() ?? 'Failed to load BOQ items';
+        });
       }
     } catch (e) {
-      debugPrint('[BOQ] API error: $e – falling back to demo data');
+      debugPrint('[BOQ] API error: $e');
       if (!mounted) return;
-      _seedDemoData();
+      setState(() {
+        _items = [];
+        _isLoading = false;
+        _error = 'Failed to load BOQ items';
+      });
     }
   }
 
@@ -128,13 +293,16 @@ class _BOQPageState extends State<BOQPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final responsive = Responsive(context);
     final isMobile = responsive.isMobile;
+    final selectedProjectId = StoreProvider.of<AppState>(context).state.project.selectedProjectId ?? '';
+    final hasProjectSelected = selectedProjectId.isNotEmpty;
 
     return ProtectedRoute(
       title: 'BOQ Management',
       route: '/boq',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // Header
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -163,34 +331,12 @@ class _BOQPageState extends State<BOQPage> {
                   ],
                 ),
               ),
-              if (!isMobile)
-                Row(
-                  children: [
-                    MadDropdownMenuButton(
-                      icon: LucideIcons.download,
-                      items: [
-                        MadMenuItem(label: 'Export PDF', icon: LucideIcons.fileText, onTap: () => _exportToPdf()),
-                        MadMenuItem(label: 'Export Excel', icon: LucideIcons.fileSpreadsheet, onTap: () => _exportToExcel()),
-                      ],
-                    ),
-                    const SizedBox(width: 12),
-                    MadButton(
-                      text: 'Import',
-                      icon: LucideIcons.fileUp,
-                      variant: ButtonVariant.outline,
-                      onPressed: () => _showImportDialog(),
-                    ),
-                    const SizedBox(width: 12),
-                    MadButton(
-                      text: 'Add Item',
-                      icon: LucideIcons.plus,
-                      onPressed: () => _showAddItemDialog(),
-                    ),
-                  ],
-                ),
+              const SizedBox.shrink(),
             ],
           ),
           const SizedBox(height: 24),
+          _buildQuickActions(isDark, responsive, hasProjectSelected),
+          const SizedBox(height: 16),
 
           // Filter toggle on mobile
           if (isMobile)
@@ -240,19 +386,11 @@ class _BOQPageState extends State<BOQPage> {
                     }),
                   ),
                 ),
-                if (isMobile) ...[
-                  const SizedBox(width: 12),
-                  MadButton(
-                    icon: LucideIcons.plus,
-                    onPressed: () => _showAddItemDialog(),
-                    size: ButtonSize.icon,
-                  ),
-                ],
               ],
             ),
           const SizedBox(height: 24),
 
-          // Data table or mobile cards
+          // Responsive, swipeable table
           _isLoading
               ? MadCard(
                   child: Padding(
@@ -260,171 +398,438 @@ class _BOQPageState extends State<BOQPage> {
                     child: MadTableSkeleton(rows: 8, columns: 8),
                   ),
                 )
-              : _filteredItems.isEmpty
-                  ? _buildEmptyState(isDark)
-                  : isMobile
-                      ? _buildMobileCardView(isDark)
-                      : MadCard(
-                          child: Column(
-                            children: [
-                              // Table header
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                decoration: BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(
-                                      color: (isDark ? Colors.white : Colors.black).withOpacity(0.1),
-                                    ),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    _buildHeaderCell('Item Code', flex: 1, isDark: isDark),
-                                    _buildHeaderCell('Description', flex: 3, isDark: isDark),
-                                    _buildHeaderCell('Category', flex: 1, isDark: isDark),
-                                    _buildHeaderCell('Floor', flex: 1, isDark: isDark),
-                                    _buildHeaderCell('Unit', flex: 1, isDark: isDark),
-                                    _buildHeaderCell('Quantity', flex: 1, isDark: isDark),
-                                    _buildHeaderCell('Rate', flex: 1, isDark: isDark),
-                                    _buildHeaderCell('Amount', flex: 1, isDark: isDark),
-                                    const SizedBox(width: 48),
-                                  ],
-                                ),
-                              ),
-                              // Table rows
-                              ..._paginatedItems.map((item) => _buildTableRow(item, isDark, false)),
-                              // Total row
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                                decoration: BoxDecoration(
-                                  border: Border(
-                                    top: BorderSide(
-                                      color: (isDark ? Colors.white : Colors.black).withOpacity(0.15),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  color: (isDark ? Colors.white : Colors.black).withOpacity(0.03),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(flex: 1, child: const SizedBox()),
-                                    Expanded(flex: 3, child: Text('Total', style: TextStyle(fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground))),
-                                    Expanded(flex: 1, child: const SizedBox()),
-                                    Expanded(flex: 1, child: const SizedBox()),
-                                    Expanded(flex: 1, child: const SizedBox()),
-                                    Expanded(flex: 1, child: const SizedBox()),
-                                    Expanded(flex: 1, child: const SizedBox()),
-                                    Expanded(
-                                      flex: 1,
-                                      child: Text(
-                                        '₹${_totalAmount.toStringAsFixed(2)}',
-                                        style: TextStyle(fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 48),
-                                  ],
-                                ),
-                              ),
-                              // Pagination
-                              if (_totalPages > 1)
-                                Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    border: Border(
-                                      top: BorderSide(
-                                        color: (isDark ? Colors.white : Colors.black).withOpacity(0.1),
-                                      ),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Showing ${(_currentPage - 1) * _itemsPerPage + 1}-${_currentPage * _itemsPerPage > _filteredItems.length ? _filteredItems.length : _currentPage * _itemsPerPage} of ${_filteredItems.length}',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                                        ),
-                                      ),
-                                      Row(
-                                        children: [
-                                          MadButton(
-                                            icon: LucideIcons.chevronLeft,
-                                            variant: ButtonVariant.outline,
-                                            size: ButtonSize.icon,
-                                            disabled: _currentPage == 1,
-                                            onPressed: () => setState(() => _currentPage--),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                                            child: Text(
-                                              '$_currentPage of $_totalPages',
-                                              style: const TextStyle(fontSize: 14),
-                                            ),
-                                          ),
-                                          MadButton(
-                                            icon: LucideIcons.chevronRight,
-                                            variant: ButtonVariant.outline,
-                                            size: ButtonSize.icon,
-                                            disabled: _currentPage == _totalPages,
-                                            onPressed: () => setState(() => _currentPage++),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-        ],
+              : _error != null
+                  ? _buildErrorState(isDark, _error!)
+                  : _filteredItems.isEmpty
+                      ? _buildEmptyState(isDark)
+                      : _buildResponsiveTable(isDark, responsive),
+            const SizedBox(height: 12),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildMobileCardView(bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ..._paginatedItems.map((item) => _buildMobileCard(item, isDark)),
-        // Total row for mobile
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: MadCard(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Total',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                      color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+  Widget _buildQuickActions(bool isDark, Responsive responsive, bool hasProjectSelected) {
+    return MadCard(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _buildActionTile(
+              isDark: isDark,
+              responsive: responsive,
+              icon: LucideIcons.fileUp,
+              title: 'Import BOQ PDF',
+              subtitle: 'Extract and preview',
+              onTap: _importFromPdf,
+            ),
+            _buildActionTile(
+              isDark: isDark,
+              responsive: responsive,
+              icon: LucideIcons.download,
+              title: 'Export',
+              subtitle: 'PDF or Excel',
+              onTap: _showExportOptionsSheet,
+            ),
+            _buildActionTile(
+              isDark: isDark,
+              responsive: responsive,
+              icon: LucideIcons.plus,
+              title: 'Add Item',
+              subtitle: hasProjectSelected ? 'Create BOQ row' : 'Select project first',
+              onTap: hasProjectSelected ? _openAddItemPage : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionTile({
+    required bool isDark,
+    required Responsive responsive,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback? onTap,
+  }) {
+    final width = responsive.isMobile ? responsive.screenWidth - 56 : 220.0;
+    final disabled = onTap == null;
+    return Opacity(
+      opacity: disabled ? 0.6 : 1,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: width,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
+            color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.35),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                      ),
                     ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showExportOptionsSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf_outlined),
+              title: const Text('Export PDF'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _exportToPdf();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.table_chart_outlined),
+              title: const Text('Export Excel'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _exportToExcel();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResponsiveTable(bool isDark, Responsive responsive) {
+    final isMobile = responsive.isMobile;
+    const categoryWidth = 140.0;
+    const itemCodeWidth = 120.0;
+    const descriptionWidth = 320.0;
+    const floorWidth = 110.0;
+    const unitWidth = 90.0;
+    const qtyWidth = 110.0;
+    const rateWidth = 130.0;
+    const amountWidth = 140.0;
+    const actionsWidth = 80.0;
+    const horizontalCellPadding = 24.0; // 12 left + 12 right in header/rows/total rows
+    const tableWidth = categoryWidth +
+        itemCodeWidth +
+        descriptionWidth +
+        floorWidth +
+        unitWidth +
+        qtyWidth +
+        rateWidth +
+        amountWidth +
+        actionsWidth +
+        horizontalCellPadding;
+
+    return MadCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (isMobile)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.35),
+                border: Border(
+                  bottom: BorderSide(
+                    color: (isDark ? Colors.white : Colors.black).withOpacity(0.08),
                   ),
-                  Text(
-                    '₹${_totalAmount.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                      color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.swipe,
+                    size: 16,
+                    color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Swipe horizontally to view all keys and values',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
+          SizedBox(
+            height: responsive.value(mobile: 420.0, tablet: 470.0, desktop: 520.0),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: tableWidth,
+                child: Column(
+                  children: [
+                    _buildTableHeader(isDark),
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: _paginatedItems.length,
+                        separatorBuilder: (_, __) => Divider(
+                          height: 1,
+                          color: (isDark ? Colors.white : Colors.black).withOpacity(0.06),
+                        ),
+                        itemBuilder: (context, index) => _buildTableDataRow(_paginatedItems[index], isDark),
+                      ),
+                    ),
+                    _buildTableTotalRow(isDark),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_totalPages > 1)
+            _buildTablePagination(isDark, isMobile),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTableHeader(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.5),
+        border: Border(
+          bottom: BorderSide(
+            color: (isDark ? Colors.white : Colors.black).withOpacity(0.1),
           ),
         ),
-        if (_totalPages > 1)
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+      ),
+      child: Row(
+        children: [
+          _buildSizedHeaderCell('Category', 140, isDark),
+          _buildSizedHeaderCell('Item Code', 120, isDark),
+          _buildSizedHeaderCell('Description', 320, isDark),
+          _buildSizedHeaderCell('Floor', 110, isDark),
+          _buildSizedHeaderCell('Unit', 90, isDark),
+          _buildSizedHeaderCell('Quantity', 110, isDark, align: TextAlign.right),
+          _buildSizedHeaderCell('Rate (Est.)', 130, isDark, align: TextAlign.right),
+          _buildSizedHeaderCell('Amount', 140, isDark, align: TextAlign.right),
+          _buildSizedHeaderCell('Action', 80, isDark, align: TextAlign.center),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSizedHeaderCell(String label, double width, bool isDark, {TextAlign align = TextAlign.left}) {
+    return SizedBox(
+      width: width,
+      child: Text(
+        label,
+        textAlign: align,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTableDataRow(BOQItem item, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 140,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: MadBadge(text: item.category, variant: BadgeVariant.secondary),
+            ),
+          ),
+          _buildSizedValueCell(item.itemCode?.isNotEmpty == true ? item.itemCode! : '-', 120),
+          _buildSizedValueCell(item.description, 320, maxLines: 2),
+          _buildSizedValueCell(item.floor?.isNotEmpty == true ? item.floor! : '-', 110),
+          _buildSizedValueCell(item.unit, 90),
+          _buildSizedValueCell(item.quantity.toString(), 110, align: TextAlign.right),
+          _buildSizedValueCell('₹${item.rate?.toStringAsFixed(2) ?? '-'}', 130, align: TextAlign.right),
+          _buildSizedValueCell('₹${item.amount?.toStringAsFixed(2) ?? '-'}', 140, align: TextAlign.right),
+          SizedBox(
+            width: 80,
+            child: Align(
+              alignment: Alignment.center,
+              child: PopupMenuButton<String>(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                icon: Icon(
+                  Icons.more_vert,
+                  size: 18,
+                  color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                ),
+                itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Delete', style: TextStyle(color: Colors.red)),
+                  ),
+                ],
+                onSelected: (value) {
+                  if (value == 'edit') {
+                    _showEditItemDialog(item);
+                  } else if (value == 'delete') {
+                    _showDeleteConfirmDialog(item);
+                  }
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSizedValueCell(String value, double width, {int maxLines = 1, TextAlign align = TextAlign.left}) {
+    return SizedBox(
+      width: width,
+      child: Text(
+        value,
+        textAlign: align,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  Widget _buildTableTotalRow(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: (isDark ? Colors.white : Colors.black).withOpacity(0.12),
+          ),
+        ),
+        color: (isDark ? Colors.white : Colors.black).withOpacity(0.03),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 140),
+          const SizedBox(width: 120),
+          SizedBox(
+            width: 320,
+            child: Text(
+              'Total',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              ),
+            ),
+          ),
+          const SizedBox(width: 110 + 90 + 110 + 130),
+          SizedBox(
+            width: 140,
+            child: Text(
+              '₹${_totalAmount.toStringAsFixed(2)}',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              ),
+            ),
+          ),
+          const SizedBox(width: 80),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTablePagination(bool isDark, bool isMobile) {
+    final summary = 'Showing ${(_currentPage - 1) * _itemsPerPage + 1}-'
+        '${_currentPage * _itemsPerPage > _filteredItems.length ? _filteredItems.length : _currentPage * _itemsPerPage} '
+        'of ${_filteredItems.length}';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: (isDark ? Colors.white : Colors.black).withOpacity(0.1),
+          ),
+        ),
+      ),
+      child: isMobile
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  summary,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    MadButton(
+                      icon: LucideIcons.chevronLeft,
+                      variant: ButtonVariant.outline,
+                      size: ButtonSize.icon,
+                      disabled: _currentPage == 1,
+                      onPressed: () => setState(() => _currentPage--),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('$_currentPage / $_totalPages', style: const TextStyle(fontSize: 14)),
+                    ),
+                    MadButton(
+                      icon: LucideIcons.chevronRight,
+                      variant: ButtonVariant.outline,
+                      size: ButtonSize.icon,
+                      disabled: _currentPage == _totalPages,
+                      onPressed: () => setState(() => _currentPage++),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Showing ${(_currentPage - 1) * _itemsPerPage + 1}-${_currentPage * _itemsPerPage > _filteredItems.length ? _filteredItems.length : _currentPage * _itemsPerPage} of ${_filteredItems.length}',
+                  summary,
                   style: TextStyle(
                     fontSize: 13,
                     color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
@@ -441,10 +846,7 @@ class _BOQPageState extends State<BOQPage> {
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        '$_currentPage / $_totalPages',
-                        style: const TextStyle(fontSize: 14),
-                      ),
+                      child: Text('$_currentPage of $_totalPages', style: const TextStyle(fontSize: 14)),
                     ),
                     MadButton(
                       icon: LucideIcons.chevronRight,
@@ -457,186 +859,6 @@ class _BOQPageState extends State<BOQPage> {
                 ),
               ],
             ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildMobileCard(BOQItem item, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: MadCard(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (item.itemCode != null && item.itemCode!.isNotEmpty)
-                          Text(
-                            item.itemCode!,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                            ),
-                          ),
-                        if (item.itemCode != null && item.itemCode!.isNotEmpty) const SizedBox(height: 4),
-                        Text(
-                          item.description,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            MadBadge(text: item.category, variant: BadgeVariant.secondary),
-                            if (item.floor != null && item.floor!.isNotEmpty)
-                              MadBadge(text: item.floor!, variant: BadgeVariant.secondary),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Text(
-                              '${item.quantity} ${item.unit}',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Text(
-                              '₹${item.amount?.toStringAsFixed(2) ?? '-'}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  PopupMenuButton<String>(
-                    icon: Icon(
-                      Icons.more_vert,
-                      size: 20,
-                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                    ),
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Text('Delete', style: TextStyle(color: Colors.red)),
-                      ),
-                    ],
-                    onSelected: (value) {
-                      if (value == 'edit') {
-                        _showEditItemDialog(item);
-                      } else if (value == 'delete') {
-                        _showDeleteConfirmDialog(item);
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeaderCell(String text, {required int flex, required bool isDark}) {
-    return Expanded(
-      flex: flex,
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTableRow(BOQItem item, bool isDark, bool isMobile) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: (isDark ? Colors.white : Colors.black).withOpacity(0.05),
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 1,
-            child: Text(
-              item.itemCode ?? '-',
-              style: const TextStyle(fontWeight: FontWeight.w500),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(
-              item.description,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 2,
-            ),
-          ),
-          if (!isMobile) ...[
-            Expanded(
-              flex: 1,
-              child: MadBadge(
-                text: item.category,
-                variant: BadgeVariant.secondary,
-              ),
-            ),
-            Expanded(flex: 1, child: Text(item.floor ?? '-')),
-            Expanded(flex: 1, child: Text(item.unit)),
-            Expanded(flex: 1, child: Text(item.quantity.toString())),
-            Expanded(flex: 1, child: Text('₹${item.rate?.toStringAsFixed(2) ?? '-'}')),
-            Expanded(flex: 1, child: Text('₹${item.amount?.toStringAsFixed(2) ?? '-'}')),
-          ],
-          PopupMenuButton<String>(
-            icon: Icon(
-              Icons.more_vert,
-              size: 18,
-              color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-            ),
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'edit', child: Text('Edit')),
-              const PopupMenuItem(
-                value: 'delete',
-                child: Text('Delete', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-            onSelected: (value) {
-              if (value == 'edit') {
-                _showEditItemDialog(item);
-              } else if (value == 'delete') {
-                _showDeleteConfirmDialog(item);
-              }
-            },
-          ),
-        ],
-      ),
     );
   }
 
@@ -685,11 +907,52 @@ class _BOQPageState extends State<BOQPage> {
                   MadButton(
                     text: 'Add Item',
                     icon: LucideIcons.plus,
-                    onPressed: () => _showAddItemDialog(),
+                    onPressed: _openAddItemPage,
                   ),
                 ],
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(bool isDark, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red.withOpacity(0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load BOQ items',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: TextStyle(
+                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            MadButton(
+              text: 'Retry',
+              icon: LucideIcons.refreshCw,
+              onPressed: _loadBOQItems,
+            ),
           ],
         ),
       ),
@@ -1134,128 +1397,28 @@ class _BOQPageState extends State<BOQPage> {
     }
   }
 
-  void _showAddItemDialog() {
-    final itemCodeController = TextEditingController();
-    final descriptionController = TextEditingController();
-    final categoryController = TextEditingController();
-    final quantityController = TextEditingController();
-    final unitController = TextEditingController();
-    final rateController = TextEditingController();
-    final floorController = TextEditingController();
+  Future<void> _openAddItemPage() async {
+    final store = StoreProvider.of<AppState>(context);
+    final projectId = store.state.project.selectedProjectId ?? '';
+    if (projectId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a project first')),
+      );
+      return;
+    }
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Add BOQ Item'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              MadInput(
-                controller: itemCodeController,
-                labelText: 'Item Code',
-                hintText: 'Enter item code',
-              ),
-              const SizedBox(height: 16),
-              MadInput(
-                controller: descriptionController,
-                labelText: 'Description',
-                hintText: 'Enter description',
-              ),
-              const SizedBox(height: 16),
-              MadInput(
-                controller: categoryController,
-                labelText: 'Category',
-                hintText: 'Enter category',
-              ),
-              const SizedBox(height: 16),
-              MadInput(
-                controller: floorController,
-                labelText: 'Floor',
-                hintText: 'Enter floor',
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: MadInput(
-                      controller: quantityController,
-                      labelText: 'Quantity',
-                      hintText: '0',
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: MadInput(
-                      controller: unitController,
-                      labelText: 'Unit',
-                      hintText: 'e.g. KG',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: MadInput(
-                      controller: rateController,
-                      labelText: 'Rate',
-                      hintText: '0.00',
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final store = StoreProvider.of<AppState>(context);
-              final projectId = store.state.project.selectedProjectId ?? '';
-              
-              final quantity = double.tryParse(quantityController.text) ?? 0;
-              final rate = double.tryParse(rateController.text) ?? 0;
-              final amount = quantity * rate;
-
-              final data = {
-                'project_id': projectId,
-                'item_code': itemCodeController.text,
-                'description': descriptionController.text,
-                'category': categoryController.text,
-                'floor': floorController.text,
-                'quantity': quantity.toString(),
-                'unit': unitController.text,
-                'rate': rate.toString(),
-                'amount': amount.toString(),
-              };
-
-              Navigator.pop(dialogContext);
-
-              final result = await ApiClient.createBOQ(data);
-              if (!mounted) return;
-
-              if (result['success'] == true) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('BOQ item added successfully')),
-                );
-                _loadBOQItems();
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(ErrorHandler.getMessage(result['error'] ?? 'Failed to add item'))),
-                );
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
+    final added = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => _AddBOQItemPage(projectId: projectId),
       ),
     );
+
+    if (added == true && mounted) {
+      _loadBOQItems();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('BOQ item added successfully')),
+      );
+    }
   }
 
   void _showEditItemDialog(BOQItem item) {

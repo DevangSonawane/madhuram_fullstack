@@ -8,7 +8,6 @@ import '../models/stock_area.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
-import '../demo_data/remaining_modules_demo.dart';
 
 /// Returns management page matching React's Returns page
 class ReturnsPage extends StatefulWidget {
@@ -19,11 +18,9 @@ class ReturnsPage extends StatefulWidget {
 }
 
 class _ReturnsPageState extends State<ReturnsPage> {
-  // START WITH DEMO DATA – never show blank
   bool _isLoading = false;
-  List<Return> _returns = ReturnsDemo.returns
-      .map((e) => Return.fromJson(e))
-      .toList();
+  String? _error;
+  List<Return> _returns = [];
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -33,7 +30,6 @@ class _ReturnsPageState extends State<ReturnsPage> {
   @override
   void initState() {
     super.initState();
-    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadReturns();
     });
@@ -45,22 +41,23 @@ class _ReturnsPageState extends State<ReturnsPage> {
     super.dispose();
   }
 
-  void _seedDemoData() {
-    debugPrint('[Returns] API unavailable – falling back to demo data');
-    setState(() {
-      _returns = ReturnsDemo.returns.map((e) => Return.fromJson(e)).toList();
-      _isLoading = false;
-    });
-  }
-
   Future<void> _loadReturns() async {
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
 
     if (projectId.isEmpty) {
-      _seedDemoData();
+      setState(() {
+        _returns = [];
+        _isLoading = false;
+        _error = 'No project selected';
+      });
       return;
     }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
     try {
       final result = await ApiClient.getReturns(projectId);
@@ -70,21 +67,25 @@ class _ReturnsPageState extends State<ReturnsPage> {
       if (result['success'] == true) {
         final data = result['data'] as List;
         final loaded = data.map((e) => Return.fromJson(e)).toList();
-        if (loaded.isEmpty) {
-          _seedDemoData();
-        } else {
-          setState(() {
-            _returns = loaded;
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _returns = loaded;
+          _isLoading = false;
+        });
       } else {
-        _seedDemoData();
+        setState(() {
+          _returns = [];
+          _isLoading = false;
+          _error = result['error']?.toString() ?? 'Failed to load returns';
+        });
       }
     } catch (e) {
-      debugPrint('[Returns] API error: $e – falling back to demo data');
+      debugPrint('[Returns] API error: $e');
       if (!mounted) return;
-      _seedDemoData();
+      setState(() {
+        _returns = [];
+        _isLoading = false;
+        _error = 'Failed to load returns';
+      });
     }
   }
 
@@ -262,11 +263,13 @@ class _ReturnsPageState extends State<ReturnsPage> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredReturns.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : MadCard(
-                        child: Column(
-                          children: [
+                : _error != null
+                    ? _buildErrorState(isDark, _error!)
+                    : _filteredReturns.isEmpty
+                        ? _buildEmptyState(isDark)
+                        : MadCard(
+                            child: Column(
+                              children: [
                             // Table header
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -489,6 +492,47 @@ class _ReturnsPageState extends State<ReturnsPage> {
                 onPressed: () => _showReturnDialog(),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(bool isDark, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red.withOpacity(0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load returns',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: TextStyle(
+                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            MadButton(
+              text: 'Retry',
+              icon: LucideIcons.refreshCw,
+              onPressed: _loadReturns,
+            ),
           ],
         ),
       ),

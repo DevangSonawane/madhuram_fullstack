@@ -11,12 +11,16 @@ class MainLayout extends StatefulWidget {
   final String title;
   final Widget child;
   final String currentRoute;
+  final IconData? headerLeadingIcon;
+  final VoidCallback? onHeaderLeadingPressed;
 
   const MainLayout({
     super.key,
     required this.title,
     required this.child,
     required this.currentRoute,
+    this.headerLeadingIcon,
+    this.onHeaderLeadingPressed,
   });
 
   @override
@@ -119,6 +123,8 @@ class _MainLayoutState extends State<MainLayout> {
                   children: [
                     AppHeader(
                       title: widget.title,
+                      leadingIcon: widget.headerLeadingIcon,
+                      onLeadingPressed: widget.onHeaderLeadingPressed,
                       onMenuPressed: () {
                         _scaffoldKey.currentState?.openDrawer();
                       },
@@ -163,12 +169,16 @@ class ProtectedRoute extends StatelessWidget {
   final String title;
   final String route;
   final Widget child;
+  final IconData? headerLeadingIcon;
+  final VoidCallback? onHeaderLeadingPressed;
 
   const ProtectedRoute({
     super.key,
     required this.title,
     required this.route,
     required this.child,
+    this.headerLeadingIcon,
+    this.onHeaderLeadingPressed,
   });
 
   @override
@@ -177,6 +187,8 @@ class ProtectedRoute extends StatelessWidget {
       title: title,
       currentRoute: route,
       child: child,
+      headerLeadingIcon: headerLeadingIcon,
+      onHeaderLeadingPressed: onHeaderLeadingPressed,
     );
   }
 }

@@ -6,7 +6,6 @@ import '../models/material.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
-import '../demo_data/materials_demo.dart';
 
 /// Materials (Product Master) page matching React's Materials page
 class MaterialsPage extends StatefulWidget {
@@ -17,11 +16,9 @@ class MaterialsPage extends StatefulWidget {
 }
 
 class _MaterialsPageState extends State<MaterialsPage> {
-  // START WITH DEMO DATA – never show blank
   bool _isLoading = false;
-  List<Material> _materials = MaterialsDemo.materials
-      .map((e) => Material.fromJson(e))
-      .toList();
+  String? _error;
+  List<Material> _materials = [];
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -32,7 +29,6 @@ class _MaterialsPageState extends State<MaterialsPage> {
   @override
   void initState() {
     super.initState();
-    // Try to load real data in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadMaterials();
     });
@@ -44,16 +40,11 @@ class _MaterialsPageState extends State<MaterialsPage> {
     super.dispose();
   }
 
-  /// Seed with demo data when API is unavailable
-  void _seedDemoData() {
-    debugPrint('[Materials] API unavailable – falling back to demo data');
-    setState(() {
-      _materials = MaterialsDemo.materials.map((e) => Material.fromJson(e)).toList();
-      _isLoading = false;
-    });
-  }
-
   Future<void> _loadMaterials() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
     try {
       final result = await ApiClient.getMaterials();
 
@@ -62,22 +53,25 @@ class _MaterialsPageState extends State<MaterialsPage> {
       if (result['success'] == true) {
         final data = result['data'] as List;
         final loaded = data.map((e) => Material.fromJson(e)).toList();
-        if (loaded.isEmpty) {
-          debugPrint('[Materials] API returned empty list – falling back to demo data');
-          _seedDemoData();
-        } else {
-          setState(() {
-            _materials = loaded;
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _materials = loaded;
+          _isLoading = false;
+        });
       } else {
-        _seedDemoData();
+        setState(() {
+          _materials = [];
+          _isLoading = false;
+          _error = result['error']?.toString() ?? 'Failed to load materials';
+        });
       }
     } catch (e) {
-      debugPrint('[Materials] API error: $e – falling back to demo data');
+      debugPrint('[Materials] API error: $e');
       if (!mounted) return;
-      _seedDemoData();
+      setState(() {
+        _materials = [];
+        _isLoading = false;
+        _error = 'Failed to load materials';
+      });
     }
   }
 
@@ -254,13 +248,15 @@ class _MaterialsPageState extends State<MaterialsPage> {
                       child: MadTableSkeleton(rows: 8, columns: 6),
                     ),
                   )
-                : _filteredMaterials.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : isMobile
-                        ? _buildMobileCardView(isDark)
-                        : MadCard(
-                            child: Column(
-                              children: [
+                : _error != null
+                    ? _buildErrorState(isDark, _error!)
+                    : _filteredMaterials.isEmpty
+                        ? _buildEmptyState(isDark)
+                        : isMobile
+                            ? _buildMobileCardView(isDark)
+                            : MadCard(
+                                child: Column(
+                                  children: [
                                 // Table header
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -659,6 +655,47 @@ class _MaterialsPageState extends State<MaterialsPage> {
                 onPressed: () => _showAddMaterialDialog(),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(bool isDark, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red.withOpacity(0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load materials',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: TextStyle(
+                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            MadButton(
+              text: 'Retry',
+              icon: LucideIcons.refreshCw,
+              onPressed: _loadMaterials,
+            ),
           ],
         ),
       ),

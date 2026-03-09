@@ -12,7 +12,6 @@ import '../services/file_service.dart';
 import '../models/mir.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
-import '../demo_data/additional_modules_demo.dart';
 import '../utils/responsive.dart';
 
 const _mirDraftKey = 'mir_draft';
@@ -27,6 +26,7 @@ class MIRPageFull extends StatefulWidget {
 class _MIRPageFullState extends State<MIRPageFull> {
   // Tabs
   int _selectedTabIndex = 0;
+  bool _prefillApplied = false;
 
   // Upload & Extract
   File? _selectedPdfFile;
@@ -57,9 +57,10 @@ class _MIRPageFullState extends State<MIRPageFull> {
   bool _refMethodStatement = false;
   bool _refChecklist = false;
 
-  // Recent MIRs list – START WITH DEMO DATA
+  // Recent MIRs list
   bool _isLoading = true;
-  List<MIR> _mirs = MIRDemo.mirs.map((e) => MIR.fromJson(e)).toList();
+  String? _error;
+  List<MIR> _mirs = [];
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -240,23 +241,22 @@ class _MIRPageFullState extends State<MIRPageFull> {
     };
   }
 
-  void _seedDemoMIRs() {
-    debugPrint('[MIR] API unavailable – falling back to demo data');
-    setState(() {
-      _mirs = MIRDemo.mirs.map((e) => MIR.fromJson(e)).toList();
-      _isLoading = false;
-    });
-  }
-
   Future<void> _loadMIRs() async {
     setState(() {
       _isLoading = true;
+      _error = null;
     });
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
 
     if (projectId.isEmpty) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _mirs = [];
+          _error = 'No project selected';
+        });
+      }
       return;
     }
 
@@ -266,21 +266,25 @@ class _MIRPageFullState extends State<MIRPageFull> {
       if (result['success'] == true) {
         final data = result['data'] as List;
         final loaded = data.map((e) => MIR.fromJson(e)).toList();
-        if (loaded.isEmpty) {
-          _seedDemoMIRs();
-        } else {
-          setState(() {
-            _mirs = loaded;
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _mirs = loaded;
+          _isLoading = false;
+        });
       } else {
-        _seedDemoMIRs();
+        setState(() {
+          _mirs = [];
+          _isLoading = false;
+          _error = result['error']?.toString() ?? 'Failed to load MIRs';
+        });
       }
     } catch (e) {
-      debugPrint('[MIR] API error: $e – falling back to demo data');
+      debugPrint('[MIR] API error: $e');
       if (!mounted) return;
-      _seedDemoMIRs();
+      setState(() {
+        _mirs = [];
+        _isLoading = false;
+        _error = 'Failed to load MIRs';
+      });
     }
   }
 
@@ -368,6 +372,16 @@ class _MIRPageFullState extends State<MIRPageFull> {
 
   @override
   Widget build(BuildContext context) {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (!_prefillApplied && args is Map && args['challan_number'] != null) {
+      final challanNo = args['challan_number'].toString();
+      _mirRefController.text = _mirRefController.text.isEmpty ? challanNo : _mirRefController.text;
+      _selectedTabIndex = 1;
+      _prefillApplied = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showToast(context, 'Prefilled MIR ref from challan $challanNo');
+      });
+    }
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final responsive = Responsive(context);
     final isMobile = responsive.isMobile;
@@ -954,11 +968,13 @@ class _MIRPageFullState extends State<MIRPageFull> {
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
-              : _filteredMIRs.isEmpty
-                  ? _buildEmptyState(isDark)
-                  : MadCard(
-                      child: Column(
-                        children: [
+              : _error != null
+                  ? _buildErrorState(isDark, _error!)
+                  : _filteredMIRs.isEmpty
+                      ? _buildEmptyState(isDark)
+                      : MadCard(
+                          child: Column(
+                            children: [
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                             decoration: BoxDecoration(
@@ -1102,6 +1118,47 @@ class _MIRPageFullState extends State<MIRPageFull> {
               text: 'Go to Manual Entry',
               icon: LucideIcons.pencilLine,
               onPressed: () => setState(() => _selectedTabIndex = 1),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(bool isDark, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red.withOpacity(0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load MIRs',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: TextStyle(
+                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            MadButton(
+              text: 'Retry',
+              icon: LucideIcons.refreshCw,
+              onPressed: _loadMIRs,
             ),
           ],
         ),

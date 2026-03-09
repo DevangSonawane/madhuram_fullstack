@@ -1,35 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../theme/app_theme.dart';
-import '../store/app_state.dart';
-import '../services/api_client.dart';
-import '../models/challan.dart';
-import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
-import '../demo_data/remaining_modules_demo.dart';
+import '../components/ui/components.dart';
+import '../models/challan.dart';
+import '../services/api_client.dart';
+import '../store/app_state.dart';
+import '../theme/app_theme.dart';
 
-Challan _safeChallanFromDemo(Map<String, dynamic> e) {
-  final rawItems = e['items'];
-  final int? itemCount = rawItems is int
-      ? rawItems
-      : (rawItems is List ? rawItems.length : null);
-  return Challan(
-    id: (e['challan_id'] ?? e['id'] ?? '').toString(),
-    projectId: e['project_id']?.toString(),
-    challanNo: e['challan_no'] ?? '',
-    vendor: e['vendor'] ?? '',
-    date: e['date'],
-    itemCount: itemCount,
-    status: e['status'] ?? 'Pending',
-    items: null,
-    createdAt: e['created_at'] != null
-        ? DateTime.tryParse(e['created_at'])
-        : null,
-  );
-}
-
-/// Delivery Challans page
 class ChallansPageFull extends StatefulWidget {
   const ChallansPageFull({super.key});
 
@@ -38,24 +16,42 @@ class ChallansPageFull extends StatefulWidget {
 }
 
 class _ChallansPageFullState extends State<ChallansPageFull> {
-  // START WITH DEMO DATA – never show blank
   bool _isLoading = false;
-  List<Challan> _challans = ChallansDemo.challans
-      .map((e) => _safeChallanFromDemo(e))
-      .toList();
+  List<Challan> _challans = [];
   String _searchQuery = '';
-  int _currentPage = 1;
-  final int _itemsPerPage = 10;
-  final _searchController = TextEditingController();
-  String? _statusFilter;
+  String _lastProjectId = '';
+  String? _emptyReason;
+  final TextEditingController _searchController = TextEditingController();
+
+  List<dynamic> _extractList(dynamic raw) {
+    if (raw is List) return raw;
+    if (raw is Map) {
+      const candidateKeys = [
+        'data',
+        'items',
+        'rows',
+        'records',
+        'challans',
+        'result',
+      ];
+      for (final key in candidateKeys) {
+        if (raw.containsKey(key)) {
+          final extracted = _extractList(raw[key]);
+          if (extracted.isNotEmpty) return extracted;
+        }
+      }
+      for (final value in raw.values) {
+        final extracted = _extractList(value);
+        if (extracted.isNotEmpty) return extracted;
+      }
+    }
+    return const [];
+  }
 
   @override
   void initState() {
     super.initState();
-    // Try real API in background; demo data already visible
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadChallans();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadChallans());
   }
 
   @override
@@ -64,83 +60,195 @@ class _ChallansPageFullState extends State<ChallansPageFull> {
     super.dispose();
   }
 
-  void _seedDemoData() {
-    debugPrint('[Challans] API unavailable – falling back to demo data');
-    setState(() {
-      _challans = ChallansDemo.challans.map((e) => _safeChallanFromDemo(e)).toList();
-      _isLoading = false;
-    });
-  }
-
   Future<void> _loadChallans() async {
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
 
     if (projectId.isEmpty) {
-      _seedDemoData();
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _challans = [];
+        _emptyReason = 'No project selected';
+      });
       return;
     }
 
+    setState(() => _isLoading = true);
+
     try {
       final result = await ApiClient.getChallansByProject(projectId);
-
       if (!mounted) return;
 
-      if (result['success'] == true) {
-        final data = result['data'] as List;
-        final loaded = data.map((e) => Challan.fromJson(e)).toList();
-        if (loaded.isEmpty) {
-          _seedDemoData();
-        } else {
-          setState(() {
-            _challans = loaded;
-            _isLoading = false;
-          });
-        }
+      final raw = result['data'];
+      final data = _extractList(raw);
+
+      if (result['success'] == true && data.isNotEmpty) {
+        final loaded = data
+            .whereType<Map>()
+            .map((e) => Challan.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+        setState(() {
+          _challans = loaded;
+          _isLoading = false;
+          _emptyReason = null;
+        });
       } else {
-        _seedDemoData();
+        setState(() {
+          _challans = [];
+          _isLoading = false;
+          _emptyReason = result['error']?.toString();
+        });
       }
     } catch (e) {
-      debugPrint('[Challans] API error: $e – falling back to demo data');
       if (!mounted) return;
-      _seedDemoData();
+      setState(() {
+        _challans = [];
+        _isLoading = false;
+        _emptyReason = 'Failed to load challans';
+      });
     }
   }
-
 
   List<Challan> get _filteredChallans {
-    List<Challan> result = _challans;
-
-    if (_searchQuery.isNotEmpty) {
-      final query = _searchQuery.toLowerCase();
-      result = result.where((c) {
-        return c.challanNo.toLowerCase().contains(query) ||
-            c.vendor.toLowerCase().contains(query);
-      }).toList();
-    }
-
-    if (_statusFilter != null) {
-      result = result.where((c) => c.status == _statusFilter).toList();
-    }
-
-    return result;
+    final term = _searchQuery.trim().toLowerCase();
+    if (term.isEmpty) return _challans;
+    return _challans.where((x) {
+      final challanNumber = x.challanNumber.toLowerCase();
+      final poNumber = (x.poNumber ?? '').toLowerCase();
+      return challanNumber.contains(term) || poNumber.contains(term);
+    }).toList();
   }
-
-  List<Challan> get _paginatedChallans {
-    final start = (_currentPage - 1) * _itemsPerPage;
-    final end = start + _itemsPerPage;
-    final filtered = _filteredChallans;
-    if (start >= filtered.length) return [];
-    return filtered.sublist(start, end > filtered.length ? filtered.length : end);
-  }
-
-  int get _totalPages => (_filteredChallans.length / _itemsPerPage).ceil();
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 768;
+    final isMobile = MediaQuery.of(context).size.width < 768;
+    final selectedProjectId =
+        StoreProvider.of<AppState>(context).state.project.selectedProjectId ?? '';
+    if (selectedProjectId != _lastProjectId) {
+      _lastProjectId = selectedProjectId;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadChallans());
+    }
+
+    final pendingCount = _challans.where((x) => x.status == 'incomplete').length;
+    final verifiedCount = _challans.where((x) => x.status == 'completed').length;
+    final totalCount = _challans.length;
+
+    if (isMobile) {
+      return ProtectedRoute(
+        title: 'Delivery Challans',
+        route: '/challans',
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Delivery Challans',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Create and track delivery challans.',
+                style: TextStyle(
+                  color: isDark
+                      ? AppTheme.darkMutedForeground
+                      : AppTheme.lightMutedForeground,
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: MadButton(
+                  text: 'Record New Delivery',
+                  icon: LucideIcons.truck,
+                  onPressed: () => Navigator.pushNamed(context, '/challans/new')
+                      .then((_) => _loadChallans()),
+                ),
+              ),
+              const SizedBox(height: 24),
+              _metricCard(
+                title: 'Pending Verification',
+                value: pendingCount.toString(),
+                icon: LucideIcons.triangleAlert,
+                iconColor: const Color(0xFFEAB308),
+                isDark: isDark,
+              ),
+              const SizedBox(height: 12),
+              _metricCard(
+                title: 'Verified Today',
+                value: verifiedCount.toString(),
+                icon: LucideIcons.circleCheck,
+                iconColor: const Color(0xFF22C55E),
+                isDark: isDark,
+              ),
+              const SizedBox(height: 12),
+              _metricCard(
+                title: 'Total Deliveries',
+                value: totalCount.toString(),
+                icon: LucideIcons.truck,
+                iconColor: isDark
+                    ? AppTheme.darkMutedForeground
+                    : AppTheme.lightMutedForeground,
+                isDark: isDark,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Challan History',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: MadSearchInput(
+                  controller: _searchController,
+                  hintText: 'Search challan no, PO no...',
+                  onChanged: (value) => setState(() {
+                    _searchQuery = value;
+                  }),
+                  onClear: () => setState(() {
+                    _searchQuery = '';
+                  }),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_filteredChallans.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: Text(
+                      _emptyReason == null || _emptyReason!.isEmpty
+                          ? 'No delivery challans found.'
+                          : _emptyReason!,
+                      style: TextStyle(
+                        color: isDark
+                            ? AppTheme.darkMutedForeground
+                            : AppTheme.lightMutedForeground,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                _buildMobileList(isDark, embeddedInPage: true),
+            ],
+          ),
+        ),
+      );
+    }
 
     return ProtectedRoute(
       title: 'Delivery Challans',
@@ -148,295 +256,400 @@ class _ChallansPageFullState extends State<ChallansPageFull> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Delivery Challans',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Delivery Challans',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: isDark
+                              ? AppTheme.darkForeground
+                              : AppTheme.lightForeground,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Track material deliveries and receipts',
-                      style: TextStyle(
-                        color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                      const SizedBox(height: 8),
+                      Text(
+                        'Create and track delivery challans.',
+                        style: TextStyle(
+                          color: isDark
+                              ? AppTheme.darkMutedForeground
+                              : AppTheme.lightMutedForeground,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              if (!isMobile)
                 MadButton(
-                  text: 'New Challan',
-                  icon: LucideIcons.plus,
-                  onPressed: () => _showChallanDialog(),
+                  text: 'Record New Delivery',
+                  icon: LucideIcons.truck,
+                  onPressed: () => Navigator.pushNamed(context, '/challans/new')
+                      .then((_) => _loadChallans()),
                 ),
-            ],
+              ],
           ),
           const SizedBox(height: 24),
 
-          // Stats cards
-          if (!isMobile)
-            Row(
+          Row(
               children: [
                 Expanded(
-                  child: StatCard(
-                    title: 'Total Challans',
-                    value: _challans.length.toString(),
-                    icon: LucideIcons.truck,
-                    iconColor: AppTheme.primaryColor,
+                  child: _metricCard(
+                    title: 'Pending Verification',
+                    value: pendingCount.toString(),
+                    icon: LucideIcons.triangleAlert,
+                    iconColor: const Color(0xFFEAB308),
+                    isDark: isDark,
                   ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  child: StatCard(
-                    title: 'Pending',
-                    value: _challans.where((c) => c.status == 'Pending').length.toString(),
-                    icon: LucideIcons.clock,
-                    iconColor: const Color(0xFFF59E0B),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: StatCard(
-                    title: 'Received',
-                    value: _challans.where((c) => c.status == 'Received').length.toString(),
-                    icon: LucideIcons.packageCheck,
+                  child: _metricCard(
+                    title: 'Verified Today',
+                    value: verifiedCount.toString(),
+                    icon: LucideIcons.circleCheck,
                     iconColor: const Color(0xFF22C55E),
+                    isDark: isDark,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _metricCard(
+                    title: 'Total Deliveries',
+                    value: totalCount.toString(),
+                    icon: LucideIcons.truck,
+                    iconColor: isDark
+                        ? AppTheme.darkMutedForeground
+                        : AppTheme.lightMutedForeground,
+                    isDark: isDark,
                   ),
                 ),
               ],
-            ),
-          if (!isMobile) const SizedBox(height: 24),
-
-          // Search and filters
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              SizedBox(
-                width: isMobile ? double.infinity : 320,
-                child: MadSearchInput(
-                  controller: _searchController,
-                  hintText: 'Search challans...',
-                  onChanged: (value) => setState(() {
-                    _searchQuery = value;
-                    _currentPage = 1;
-                  }),
-                  onClear: () => setState(() {
-                    _searchQuery = '';
-                    _currentPage = 1;
-                  }),
-                ),
-              ),
-              SizedBox(
-                width: 150,
-                child: MadSelect<String>(
-                  value: _statusFilter,
-                  placeholder: 'All Status',
-                  clearable: true,
-                  options: const [
-                    MadSelectOption(value: 'Pending', label: 'Pending'),
-                    MadSelectOption(value: 'In Transit', label: 'In Transit'),
-                    MadSelectOption(value: 'Received', label: 'Received'),
-                    MadSelectOption(value: 'Partial', label: 'Partial'),
-                  ],
-                  onChanged: (value) => setState(() {
-                    _statusFilter = value;
-                    _currentPage = 1;
-                  }),
-                ),
-              ),
-              if (isMobile)
-                MadButton(
-                  icon: LucideIcons.plus,
-                  text: 'New',
-                  onPressed: () => _showChallanDialog(),
-                ),
-            ],
           ),
           const SizedBox(height: 24),
 
-          // Data table
+          Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Challan History',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 320,
+                  child: MadSearchInput(
+                    controller: _searchController,
+                    hintText: 'Search challan no, PO no...',
+                    onChanged: (value) => setState(() {
+                      _searchQuery = value;
+                    }),
+                    onClear: () => setState(() {
+                      _searchQuery = '';
+                    }),
+                  ),
+                ),
+              ],
+          ),
+          const SizedBox(height: 16),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredChallans.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : MadCard(
-                        child: Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.3),
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                              ),
-                              child: Row(
-                                children: [
-                                  _buildHeaderCell('Challan #', flex: 1, isDark: isDark),
-                                  _buildHeaderCell('Vendor', flex: 2, isDark: isDark),
-                                  if (!isMobile) ...[
-                                    _buildHeaderCell('Date', flex: 1, isDark: isDark),
-                                    _buildHeaderCell('Items', flex: 1, isDark: isDark),
-                                  ],
-                                  _buildHeaderCell('Status', flex: 1, isDark: isDark),
-                                  const SizedBox(width: 48),
-                                ],
-                              ),
-                            ),
-                            Expanded(
-                              child: ListView.separated(
-                                itemCount: _paginatedChallans.length,
-                                separatorBuilder: (_, __) => Divider(
-                                  height: 1,
-                                  color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5),
-                                ),
-                                itemBuilder: (context, index) => _buildTableRow(_paginatedChallans[index], isDark, isMobile),
-                              ),
-                            ),
-                            if (_totalPages > 1) _buildPagination(isDark),
-                          ],
+                    ? Align(
+                        alignment: Alignment.topLeft,
+                        child: Text(
+                          _emptyReason == null || _emptyReason!.isEmpty
+                              ? 'No delivery challans found.'
+                              : _emptyReason!,
+                          style: TextStyle(
+                            color: isDark
+                                ? AppTheme.darkMutedForeground
+                                : AppTheme.lightMutedForeground,
+                          ),
                         ),
-                      ),
+                      )
+                    : _buildDesktopTable(isDark),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHeaderCell(String text, {required int flex, required bool isDark}) {
+  Widget _buildDesktopTable(bool isDark) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted)
+                .withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              _header('Challan No', flex: 2, isDark: isDark),
+              _header('Date', flex: 2, isDark: isDark),
+              _header('PO No', flex: 2, isDark: isDark),
+              _header('Items', flex: 3, isDark: isDark),
+              _header('Counts', flex: 2, isDark: isDark, align: TextAlign.right),
+              _header('Status', flex: 2, isDark: isDark),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: ListView.separated(
+            itemCount: _filteredChallans.length,
+            separatorBuilder: (context, index) => Divider(
+              height: 1,
+              color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder)
+                  .withValues(alpha: 0.4),
+            ),
+            itemBuilder: (context, index) {
+              final dc = _filteredChallans[index];
+              final statusVariant = dc.status == 'completed'
+                  ? BadgeVariant.default_
+                  : BadgeVariant.secondary;
+              final date = dc.challanDate ??
+                  dc.orderDate ??
+                  (dc.createdAt?.toIso8601String() ?? '');
+              final items = dc.items
+                  .map((it) => it.name)
+                  .where((n) => n.isNotEmpty)
+                  .join(', ');
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        dc.challanNumber,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    Expanded(flex: 2, child: Text(date)),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        dc.poNumber ?? dc.poId ?? '',
+                        style:
+                            const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: Text(items, overflow: TextOverflow.ellipsis),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          '${dc.totalPoItems ?? '—'} / ${dc.totalChallanItems ?? dc.items.length}',
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: MadBadge(text: dc.status, variant: statusVariant),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileList(bool isDark, {bool embeddedInPage = false}) {
+    return ListView.separated(
+      shrinkWrap: embeddedInPage,
+      physics: embeddedInPage
+          ? const NeverScrollableScrollPhysics()
+          : const AlwaysScrollableScrollPhysics(),
+      itemCount: _filteredChallans.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        final dc = _filteredChallans[index];
+        final statusVariant =
+            dc.status == 'completed' ? BadgeVariant.default_ : BadgeVariant.secondary;
+        final date = dc.challanDate ??
+            dc.orderDate ??
+            (dc.createdAt?.toIso8601String() ?? '');
+        final items = dc.items.map((it) => it.name).where((n) => n.isNotEmpty).join(', ');
+
+        return Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            dc.challanNumber,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            date,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark
+                                  ? AppTheme.darkMutedForeground
+                                  : AppTheme.lightMutedForeground,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    MadBadge(text: dc.status, variant: statusVariant),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'PO Ref',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark
+                                  ? AppTheme.darkMutedForeground
+                                  : AppTheme.lightMutedForeground,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            dc.poNumber ?? dc.poId ?? '',
+                            style:
+                                const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Items',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark
+                                  ? AppTheme.darkMutedForeground
+                                  : AppTheme.lightMutedForeground,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(items, overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _header(
+    String text, {
+    required int flex,
+    required bool isDark,
+    TextAlign align = TextAlign.left,
+  }) {
     return Expanded(
       flex: flex,
-      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), overflow: TextOverflow.ellipsis),
-    );
-  }
-
-  Widget _buildTableRow(Challan challan, bool isDark, bool isMobile) {
-    BadgeVariant statusVariant = challan.status == 'Received' ? BadgeVariant.default_ : challan.status == 'Pending' ? BadgeVariant.secondary : BadgeVariant.outline;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Row(
-        children: [
-          Expanded(flex: 1, child: Text(challan.challanNo, style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
-          Expanded(flex: 2, child: Text(challan.vendor, overflow: TextOverflow.ellipsis)),
-          if (!isMobile) ...[
-            Expanded(flex: 1, child: Text(challan.date ?? '-', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), overflow: TextOverflow.ellipsis)),
-            Expanded(flex: 1, child: Text('${challan.items?.length ?? challan.itemCount ?? 0} items', overflow: TextOverflow.ellipsis)),
-          ],
-          Expanded(flex: 1, child: MadBadge(text: challan.status, variant: statusVariant)),
-          MadDropdownMenuButton(items: [
-            MadMenuItem(label: 'View Details', icon: LucideIcons.eye, onTap: () {}),
-            MadMenuItem(label: 'Mark Received', icon: LucideIcons.packageCheck, onTap: () => _markChallanReceived(challan)),
-            MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _confirmDeleteChallan(challan)),
-          ]),
-        ],
+      child: Text(
+        text,
+        textAlign: align,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+        ),
       ),
     );
   }
 
-  Widget _buildPagination(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5)))),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text('Showing ${(_currentPage - 1) * _itemsPerPage + 1}-${_currentPage * _itemsPerPage > _filteredChallans.length ? _filteredChallans.length : _currentPage * _itemsPerPage} of ${_filteredChallans.length}', style: TextStyle(fontSize: 13, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
-          Row(children: [
-            MadButton(icon: LucideIcons.chevronLeft, variant: ButtonVariant.outline, size: ButtonSize.sm, disabled: _currentPage == 1, onPressed: () => setState(() => _currentPage--)),
-            Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text('$_currentPage of $_totalPages')),
-            MadButton(icon: LucideIcons.chevronRight, variant: ButtonVariant.outline, size: ButtonSize.sm, disabled: _currentPage >= _totalPages, onPressed: () => setState(() => _currentPage++)),
-          ]),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(bool isDark) {
-    return Center(
+  Widget _metricCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color iconColor,
+    required bool isDark,
+  }) {
+    return MadCard(
       child: Padding(
-        padding: const EdgeInsets.all(48),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(LucideIcons.truck, size: 64, color: (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground).withOpacity(0.3)),
-          const SizedBox(height: 24),
-          Text(_searchQuery.isEmpty ? 'No delivery challans yet' : 'No challans found', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
-          const SizedBox(height: 8),
-          Text(_searchQuery.isEmpty ? 'Record a delivery challan to track shipments' : 'Try a different search term', style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
-          if (_searchQuery.isEmpty) ...[const SizedBox(height: 24), MadButton(text: 'New Challan', icon: LucideIcons.plus, onPressed: () => _showChallanDialog())],
-        ]),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: isDark
+                          ? AppTheme.darkMutedForeground
+                          : AppTheme.lightMutedForeground,
+                    ),
+                  ),
+                ),
+                Icon(icon, size: 18, color: iconColor),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              ),
+            ),
+          ],
+        ),
       ),
-    );
-  }
-
-  void _markChallanReceived(Challan challan) {
-    setState(() {
-      final i = _challans.indexWhere((c) => c.id == challan.id);
-      if (i >= 0) {
-        final c = _challans[i];
-        _challans[i] = Challan(
-          id: c.id,
-          projectId: c.projectId,
-          challanNo: c.challanNo,
-          vendor: c.vendor,
-          date: c.date,
-          itemCount: c.itemCount,
-          status: 'Received',
-          items: c.items,
-          createdAt: c.createdAt,
-        );
-      }
-    });
-    if (mounted) showToast(context, 'Challan marked as Received');
-  }
-
-  void _confirmDeleteChallan(Challan challan) {
-    MadDialog.confirm(
-      context: context,
-      title: 'Delete Challan',
-      description: 'Are you sure you want to delete challan "${challan.challanNo}"? This action cannot be undone.',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-      destructive: true,
-    ).then((confirmed) {
-      if (confirmed != true || !mounted) return;
-      setState(() => _challans.removeWhere((c) => c.id == challan.id));
-      showToast(context, 'Challan deleted');
-    });
-  }
-
-  void _showChallanDialog() {
-    MadFormDialog.show(
-      context: context,
-      title: 'New Delivery Challan',
-      maxWidth: 500,
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        Row(children: [
-          Expanded(child: MadInput(labelText: 'Challan Number', hintText: 'DC-XXX')),
-          const SizedBox(width: 16),
-          Expanded(child: MadInput(labelText: 'Date', hintText: 'Select date')),
-        ]),
-        const SizedBox(height: 16),
-        MadSelect<String>(labelText: 'Vendor', placeholder: 'Select vendor', searchable: true, options: const [MadSelectOption(value: 'abc', label: 'ABC Suppliers'), MadSelectOption(value: 'xyz', label: 'XYZ Traders')], onChanged: (v) {}),
-        const SizedBox(height: 16),
-        MadSelect<String>(labelText: 'Purchase Order', placeholder: 'Link to PO (optional)', options: const [MadSelectOption(value: 'po1', label: 'PO-001'), MadSelectOption(value: 'po2', label: 'PO-002')], onChanged: (v) {}),
-        const SizedBox(height: 16),
-        MadTextarea(labelText: 'Notes', hintText: 'Delivery notes...', minLines: 2),
-      ]),
-      actions: [
-        MadButton(text: 'Cancel', variant: ButtonVariant.outline, onPressed: () => Navigator.pop(context)),
-        MadButton(text: 'Create Challan', onPressed: () { Navigator.pop(context); _loadChallans(); }),
-      ],
     );
   }
 }

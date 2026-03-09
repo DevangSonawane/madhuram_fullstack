@@ -8,7 +8,6 @@ import '../services/api_client.dart';
 import '../models/stock_area.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
-import '../demo_data/remaining_modules_demo.dart';
 
 /// Stock Transfers page matching React's StockTransfers page
 class StockTransfersPage extends StatefulWidget {
@@ -19,11 +18,9 @@ class StockTransfersPage extends StatefulWidget {
 }
 
 class _StockTransfersPageState extends State<StockTransfersPage> {
-  // START WITH DEMO DATA – never show blank
   bool _isLoading = false;
-  List<StockTransfer> _transfers = StockTransfersDemo.transfers
-      .map((e) => StockTransfer.fromJson(e))
-      .toList();
+  String? _error;
+  List<StockTransfer> _transfers = [];
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -33,7 +30,6 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
   @override
   void initState() {
     super.initState();
-    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadTransfers();
     });
@@ -45,22 +41,23 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
     super.dispose();
   }
 
-  void _seedDemoData() {
-    debugPrint('[StockTransfers] API unavailable – falling back to demo data');
-    setState(() {
-      _transfers = StockTransfersDemo.transfers.map((e) => StockTransfer.fromJson(e)).toList();
-      _isLoading = false;
-    });
-  }
-
   Future<void> _loadTransfers() async {
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
 
     if (projectId.isEmpty) {
-      _seedDemoData();
+      setState(() {
+        _transfers = [];
+        _isLoading = false;
+        _error = 'No project selected';
+      });
       return;
     }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
     try {
       final result = await ApiClient.getStockTransfers(projectId);
@@ -70,21 +67,25 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
       if (result['success'] == true) {
         final data = result['data'] as List;
         final loaded = data.map((e) => StockTransfer.fromJson(e)).toList();
-        if (loaded.isEmpty) {
-          _seedDemoData();
-        } else {
-          setState(() {
-            _transfers = loaded;
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _transfers = loaded;
+          _isLoading = false;
+        });
       } else {
-        _seedDemoData();
+        setState(() {
+          _transfers = [];
+          _isLoading = false;
+          _error = result['error']?.toString() ?? 'Failed to load transfers';
+        });
       }
     } catch (e) {
-      debugPrint('[StockTransfers] API error: $e – falling back to demo data');
+      debugPrint('[StockTransfers] API error: $e');
       if (!mounted) return;
-      _seedDemoData();
+      setState(() {
+        _transfers = [];
+        _isLoading = false;
+        _error = 'Failed to load transfers';
+      });
     }
   }
 
@@ -250,11 +251,13 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredTransfers.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : MadCard(
-                        child: Column(
-                          children: [
+                : _error != null
+                    ? _buildErrorState(isDark, _error!)
+                    : _filteredTransfers.isEmpty
+                        ? _buildEmptyState(isDark)
+                        : MadCard(
+                            child: Column(
+                              children: [
                             // Table header
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -487,6 +490,47 @@ class _StockTransfersPageState extends State<StockTransfersPage> {
                 onPressed: () => _showTransferDialog(),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(bool isDark, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red.withOpacity(0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load transfers',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: TextStyle(
+                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            MadButton(
+              text: 'Retry',
+              icon: LucideIcons.refreshCw,
+              onPressed: _loadTransfers,
+            ),
           ],
         ),
       ),

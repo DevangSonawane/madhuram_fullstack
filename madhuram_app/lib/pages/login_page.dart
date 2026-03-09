@@ -61,31 +61,6 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  Future<void> _demoLogin(String role) async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    final store = StoreProvider.of<AppState>(context);
-
-    final demoUser = {
-      'user_id': 'demo-$role',
-      'name': role == 'admin' ? 'Admin User' : 'Project Manager',
-      'email': '$role@madhuram.com',
-      'role': role,
-      'token': 'demo-token',
-    };
-
-    await AuthStorage.setUser(demoUser);
-    store.dispatch(LoginSuccess(demoUser));
-
-    if (!mounted) return;
-
-    setState(() => _isLoading = false);
-    Navigator.pushReplacementNamed(context, '/projects');
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -359,73 +334,6 @@ class _LoginPageState extends State<LoginPage> {
                           text: 'Sign in',
                           onPressed: _isLoading ? null : _login,
                           loading: _isLoading,
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Divider
-                        Row(
-                          children: [
-                            Expanded(child: Divider(color: (isDark ? Colors.white : Colors.black).withOpacity(0.1))),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                'OR',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                                ),
-                              ),
-                            ),
-                            Expanded(child: Divider(color: (isDark ? Colors.white : Colors.black).withOpacity(0.1))),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Demo login buttons
-                        Text(
-                          'Demo accounts',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: MadButton(
-                                text: 'Admin',
-                                variant: ButtonVariant.outline,
-                                icon: LucideIcons.shield,
-                                onPressed: _isLoading ? null : () => _demoLogin('admin'),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: MadButton(
-                                text: 'Manager',
-                                variant: ButtonVariant.outline,
-                                icon: LucideIcons.user,
-                                onPressed: _isLoading ? null : () => _demoLogin('project_manager'),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: MadButton(
-                            text: 'Devang Demo',
-                            variant: ButtonVariant.outline,
-                            icon: LucideIcons.userCheck,
-                            onPressed: _isLoading ? null : () {
-                              _emailController.text = 'devang@madhuram.com';
-                              _passwordController.text = 'demo123';
-                              _login();
-                            },
-                          ),
                         ),
                         const SizedBox(height: 24),
 

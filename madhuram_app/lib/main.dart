@@ -18,8 +18,6 @@ import 'services/auth_storage.dart';
 import 'services/http_overrides.dart';
 import 'services/api_client.dart';
 
-// Demo data
-import 'demo_data/notifications_demo.dart';
 
 // Theme
 import 'theme/app_theme.dart';
@@ -35,6 +33,7 @@ import 'pages/boq_page.dart';
 import 'pages/profile_page.dart';
 // Inventory Module
 import 'pages/materials_page.dart';
+import 'pages/add_inventory_page.dart';
 import 'pages/stock_areas_page.dart';
 import 'pages/stock_transfers_page.dart';
 import 'pages/consumption_page.dart';
@@ -45,10 +44,16 @@ import 'pages/purchase_requests_page.dart';
 import 'pages/vendor_comparison_page.dart';
 import 'pages/purchase_orders_page_full.dart';
 import 'pages/vendors_page_full.dart';
+import 'pages/vendor_create_page.dart';
 import 'pages/samples_page.dart';
+import 'pages/sample_create_page.dart';
+import 'pages/sample_preview_page.dart';
+import 'pages/sample_edit_page.dart';
 
 // Delivery & Inspection Module
 import 'pages/challans_page.dart';
+import 'pages/new_challan_page.dart';
+import 'pages/challan_detail_page.dart';
 import 'pages/mer_page.dart';
 import 'pages/mir_page_full.dart';
 import 'pages/itr_page_full.dart';
@@ -77,13 +82,17 @@ final Map<String, Widget Function(BuildContext)> _appRoutes = {
   '/vendor-comparison': (context) => const VendorComparisonPageFull(),
   '/purchase-orders': (context) => const PurchaseOrdersPageFull(),
   '/vendors': (context) => const VendorsPageFull(),
+  '/vendors/new': (context) => const VendorCreatePage(),
   '/challans': (context) => const ChallansPageFull(),
+  '/challans/new': (context) => const NewChallanPage(),
   '/mer': (context) => const MERPageFull(),
   '/mir': (context) => const MIRPageFull(),
   '/itr': (context) => const ITRPageFull(),
   '/billing': (context) => const BillingPageFull(),
   '/stock-areas': (context) => const StockAreasPage(),
   '/materials': (context) => const MaterialsPage(),
+  '/inventory/add': (context) => const AddInventoryPage(),
+  '/projects/inventory/add': (context) => const AddInventoryPage(),
   '/stock-transfers': (context) => const StockTransfersPage(),
   '/consumption': (context) => const ConsumptionPage(),
   '/returns': (context) => const ReturnsPage(),
@@ -111,9 +120,6 @@ void main() async {
   
   // Restore auth state from storage before running app
   await _restoreAuthState();
-
-  // Seed notifications (will be overwritten when API is available)
-  _seedDemoNotifications();
 
   runApp(MyApp(store: store));
 }
@@ -178,38 +184,6 @@ void _restoreProjectsInBackground(String savedProjectId) {
   });
 }
 
-/// Seed demo notifications into the store so the UI is never empty
-void _seedDemoNotifications() {
-  try {
-    final items = NotificationsDemo.notifications.map((e) {
-      String time = '';
-      try {
-        final dt = DateTime.parse(e['created_at'] as String);
-        final diff = DateTime.now().difference(dt);
-        if (diff.inMinutes < 60) {
-          time = '${diff.inMinutes}m ago';
-        } else if (diff.inHours < 24) {
-          time = '${diff.inHours}h ago';
-        } else {
-          time = '${diff.inDays}d ago';
-        }
-      } catch (_) {
-        time = '';
-      }
-      return NotificationItem(
-        id: e['notification_id'] as String,
-        title: e['title'] as String,
-        message: e['message'] as String,
-        time: time,
-        read: e['is_read'] == true,
-      );
-    }).toList();
-    store.dispatch(FetchNotificationsSuccess(items));
-    debugPrint('[Main] Seeded ${items.length} demo notifications');
-  } catch (e) {
-    debugPrint('[Main] Failed to seed demo notifications: $e');
-  }
-}
 
 class MyApp extends StatelessWidget {
   final Store<AppState> store;
@@ -250,6 +224,50 @@ class MyApp extends StatelessWidget {
             },
             home: const AppRouter(),
             onGenerateRoute: (settings) {
+              if (settings.name == '/challans/detail') {
+                final id = settings.arguments?.toString() ?? '';
+                return PageRouteBuilder<void>(
+                  settings: settings,
+                  pageBuilder: (context, animation, secondaryAnimation) => ChallanDetailPage(challanId: id),
+                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                    return FadeTransition(opacity: animation, child: child);
+                  },
+                  transitionDuration: AppAnimations.normal,
+                );
+              }
+              if (settings.name == '/samples/preview') {
+                final id = settings.arguments?.toString() ?? '';
+                return PageRouteBuilder<void>(
+                  settings: settings,
+                  pageBuilder: (context, animation, secondaryAnimation) => SamplePreviewPage(sampleId: id),
+                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                    return FadeTransition(opacity: animation, child: child);
+                  },
+                  transitionDuration: AppAnimations.normal,
+                );
+              }
+              if (settings.name == '/samples/edit') {
+                final id = settings.arguments?.toString() ?? '';
+                return PageRouteBuilder<void>(
+                  settings: settings,
+                  pageBuilder: (context, animation, secondaryAnimation) => SampleEditPage(sampleId: id),
+                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                    return FadeTransition(opacity: animation, child: child);
+                  },
+                  transitionDuration: AppAnimations.normal,
+                );
+              }
+              if (settings.name == '/samples/create') {
+                final projectId = settings.arguments?.toString() ?? '';
+                return PageRouteBuilder<void>(
+                  settings: settings,
+                  pageBuilder: (context, animation, secondaryAnimation) => SampleCreatePage(initialProjectId: projectId),
+                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                    return FadeTransition(opacity: animation, child: child);
+                  },
+                  transitionDuration: AppAnimations.normal,
+                );
+              }
               final builder = _appRoutes[settings.name];
               if (builder != null) {
                 return PageRouteBuilder<void>(

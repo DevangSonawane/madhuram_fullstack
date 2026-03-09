@@ -1,50 +1,54 @@
 class Challan {
   final String id;
   final String? projectId;
-  final String challanNo;
-  final String vendor;
-  final String? date;
-  final int? itemCount;
+  final String challanNumber;
+  final String? poId;
+  final String? poNumber;
+  final String? challanDate;
+  final String? workOrderNumber;
+  final String? orderDate;
+  final int? totalPoItems;
+  final int? totalChallanItems;
   final String status;
-  final List<ChallanItem>? items;
+  final List<ChallanItem> items;
   final DateTime? createdAt;
 
   const Challan({
     required this.id,
     this.projectId,
-    required this.challanNo,
-    required this.vendor,
-    this.date,
-    this.itemCount,
-    this.status = 'Pending',
-    this.items,
+    required this.challanNumber,
+    this.poId,
+    this.poNumber,
+    this.challanDate,
+    this.workOrderNumber,
+    this.orderDate,
+    this.totalPoItems,
+    this.totalChallanItems,
+    this.status = 'incomplete',
+    this.items = const [],
     this.createdAt,
   });
 
   factory Challan.fromJson(Map<String, dynamic> json) {
     final dynamic rawItems = json['items'];
-    List<dynamic>? itemsJson;
-    int? itemCount;
-
-    if (rawItems is List) {
-      itemsJson = rawItems;
-      itemCount = rawItems.length;
-    } else if (rawItems is int) {
-      itemCount = rawItems;
-    } else {
-      itemsJson = null;
-      itemCount = null;
-    }
+    final List<dynamic> itemsJson = rawItems is List ? rawItems : <dynamic>[];
+    final int? totalChallanItems = json['total_challan_items'] is int
+        ? json['total_challan_items'] as int
+        : (rawItems is List ? rawItems.length : null);
 
     return Challan(
-      id: (json['challan_id'] ?? json['id'] ?? '').toString(),
+      id: (json['dc_id'] ?? json['challan_id'] ?? json['id'] ?? '').toString(),
       projectId: json['project_id']?.toString(),
-      challanNo: json['challan_no'] ?? '',
-      vendor: json['vendor'] ?? '',
-      date: json['date'],
-      itemCount: itemCount,
-      status: json['status'] ?? 'Pending',
-      items: itemsJson?.map((e) => ChallanItem.fromJson(e as Map<String, dynamic>)).toList(),
+      challanNumber: json['challan_number'] ?? json['challan_no'] ?? '',
+      poId: json['po_id']?.toString(),
+      poNumber: json['po_number']?.toString(),
+      challanDate: json['challan_date']?.toString() ?? json['date']?.toString(),
+      workOrderNumber: json['work_order_number']?.toString(),
+      orderDate: json['order_date']?.toString(),
+      totalPoItems: json['total_po_items'] is int ? json['total_po_items'] as int : int.tryParse(json['total_po_items']?.toString() ?? ''),
+      totalChallanItems: totalChallanItems,
+      status: json['status'] ?? 'incomplete',
+      items: itemsJson.map((e) => ChallanItem.fromJson(e as Map<String, dynamic>)).toList(),
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'])
           : null,
@@ -52,42 +56,57 @@ class Challan {
   }
 
   Map<String, dynamic> toJson() => {
-    'challan_id': id,
+    'dc_id': id,
     'project_id': projectId,
-    'challan_no': challanNo,
-    'vendor': vendor,
-    'date': date,
-    'items': items?.map((e) => e.toJson()).toList() ?? itemCount,
+    'challan_number': challanNumber,
+    'po_id': poId,
+    'po_number': poNumber,
+    'challan_date': challanDate,
+    'work_order_number': workOrderNumber,
+    'order_date': orderDate,
+    'total_po_items': totalPoItems,
+    'total_challan_items': totalChallanItems,
+    'items': items.map((e) => e.toJson()).toList(),
     'status': status,
   };
+
+  String get displayChallanDate => challanDate ?? orderDate ?? '';
 }
 
 class ChallanItem {
-  final String material;
-  final double quantity;
-  final String unit;
-  final String? remarks;
+  final String name;
+  final String description;
+  final String width;
+  final String length;
+  final String quantity;
+  final String price;
 
   const ChallanItem({
-    required this.material,
+    required this.name,
+    required this.description,
+    required this.width,
+    required this.length,
     required this.quantity,
-    required this.unit,
-    this.remarks,
+    required this.price,
   });
 
   factory ChallanItem.fromJson(Map<String, dynamic> json) {
     return ChallanItem(
-      material: json['material'] ?? '',
-      quantity: json['quantity'] != null ? (json['quantity'] as num).toDouble() : 0,
-      unit: json['unit'] ?? '',
-      remarks: json['remarks'],
+      name: json['name']?.toString() ?? json['material']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      width: json['width']?.toString() ?? '',
+      length: json['length']?.toString() ?? '',
+      quantity: json['quantity']?.toString() ?? '',
+      price: json['price']?.toString() ?? '',
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'material': material,
-    'quantity': quantity,
-    'unit': unit,
-    'remarks': remarks,
+    'name': name,
+    'description': description,
+    'width': double.tryParse(width) ?? 0,
+    'length': double.tryParse(length) ?? 0,
+    'quantity': double.tryParse(quantity) ?? 0,
+    'price': double.tryParse(price) ?? 0,
   };
 }

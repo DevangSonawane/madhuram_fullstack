@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:flutter_redux/flutter_redux.dart';
 import '../theme/app_theme.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
+import '../store/app_state.dart';
 
 /// Material Approval Sheet item (client approval workflow)
 class MASItem {
@@ -54,20 +56,9 @@ class MASPageFull extends StatefulWidget {
 }
 
 class _MASPageFullState extends State<MASPageFull> {
-  static const List<MASItem> _mockData = [
-    MASItem(id: '1', itemCode: 'CPVC-001', itemName: 'CPVC Pipe', proposedBrand: 'Astral', modelSpec: '20mm SDR-11', status: 'Approved', clientRemarks: 'Approved as per specs'),
-    MASItem(id: '2', itemCode: 'BV-001', itemName: 'Ball Valve', proposedBrand: 'Zoloto', modelSpec: '1 inch Brass', status: 'Pending', clientRemarks: ''),
-    MASItem(id: '3', itemCode: 'WC-001', itemName: 'Western Closet', proposedBrand: 'Kohler', modelSpec: 'S-Trap 100mm', status: 'Pending', clientRemarks: ''),
-    MASItem(id: '4', itemCode: 'CW-001', itemName: 'Copper Wire', proposedBrand: 'Polycab', modelSpec: '2.5 sq.mm FR', status: 'Rejected', clientRemarks: 'Use Havells instead'),
-  ];
-
-  final List<MASItem> _items = List.from(_mockData);
-  String _selectedProject = 'p1';
+  final List<MASItem> _items = [];
+  String? _selectedProject;
   String _statusTab = 'all';
-  final List<MadSelectOption<String>> _projectOptions = const [
-    MadSelectOption(value: 'p1', label: 'Lodha World One Tower'),
-    MadSelectOption(value: 'p2', label: 'Hiranandani Gardens'),
-  ];
 
   List<MASItem> get _filteredItems {
     if (_statusTab == 'all') return _items;
@@ -80,10 +71,23 @@ class _MASPageFullState extends State<MASPageFull> {
     final responsive = Responsive(context);
     final isMobile = responsive.isMobile;
 
-    return ProtectedRoute(
-      title: 'Material Approval Sheet',
-      route: '/mas',
-      child: Column(
+    return StoreConnector<AppState, _MASViewModel>(
+      converter: (store) => _MASViewModel(
+        projects: store.state.project.projects,
+        selectedProjectId: store.state.project.selectedProjectId,
+      ),
+      builder: (context, vm) {
+        _selectedProject ??= vm.selectedProjectId;
+        final projectOptions = vm.projects.map((p) {
+          final id = p['id']?.toString() ?? p['project_id']?.toString() ?? '';
+          final name = p['name']?.toString() ?? p['project_name']?.toString() ?? 'Project $id';
+          return MadSelectOption<String>(value: id, label: name);
+        }).toList();
+
+        return ProtectedRoute(
+          title: 'Material Approval Sheet',
+          route: '/mas',
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -113,7 +117,7 @@ class _MASPageFullState extends State<MASPageFull> {
                 MadButton(
                   text: 'Submit to Client',
                   icon: LucideIcons.send,
-                  onPressed: () => showToast(context, 'Submitted to client for approval'),
+                  onPressed: null,
                 ),
             ],
           ),
@@ -130,8 +134,8 @@ class _MASPageFullState extends State<MASPageFull> {
                     Expanded(
                       child: MadSelect<String>(
                         value: _selectedProject,
-                        options: _projectOptions,
-                        onChanged: (v) => setState(() => _selectedProject = v ?? _selectedProject),
+                        options: projectOptions,
+                        onChanged: (v) => setState(() => _selectedProject = v),
                       ),
                     )
                   else
@@ -139,8 +143,8 @@ class _MASPageFullState extends State<MASPageFull> {
                       width: 280,
                       child: MadSelect<String>(
                         value: _selectedProject,
-                        options: _projectOptions,
-                        onChanged: (v) => setState(() => _selectedProject = v ?? _selectedProject),
+                        options: projectOptions,
+                        onChanged: (v) => setState(() => _selectedProject = v),
                       ),
                     ),
                 ],
@@ -167,13 +171,13 @@ class _MASPageFullState extends State<MASPageFull> {
                 MadButton(
                   text: 'Submit to Client',
                   icon: LucideIcons.send,
-                  onPressed: () => showToast(context, 'Submitted to client for approval'),
+                  onPressed: null,
                 ),
               MadButton(
                 text: 'Add Item',
                 icon: LucideIcons.plus,
                 variant: ButtonVariant.outline,
-                onPressed: _showAddItemDialog,
+                onPressed: null,
               ),
             ],
           ),
@@ -218,6 +222,8 @@ class _MASPageFullState extends State<MASPageFull> {
           ),
         ],
       ),
+        );
+      },
     );
   }
 
@@ -520,4 +526,14 @@ class _MASPageFullState extends State<MASPageFull> {
       if (ok == true && mounted) setState(() => _items.removeWhere((e) => e.id == item.id));
     });
   }
+}
+
+class _MASViewModel {
+  final List<Map<String, dynamic>> projects;
+  final String? selectedProjectId;
+
+  _MASViewModel({
+    required this.projects,
+    required this.selectedProjectId,
+  });
 }

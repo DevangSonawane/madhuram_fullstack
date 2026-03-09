@@ -25,16 +25,29 @@ class Project {
   });
 
   factory Project.fromJson(Map<String, dynamic> json) {
+    String? _firstNonEmpty(List<dynamic> values) {
+      for (final v in values) {
+        final text = v?.toString();
+        if (text != null && text.trim().isNotEmpty) return text;
+      }
+      return null;
+    }
+
     return Project(
-      id: json['id']?.toString() ?? json['project_id']?.toString() ?? '',
-      name: json['name']?.toString() ?? json['project_name']?.toString() ?? 'Unnamed Project',
-      client: json['client']?.toString() ?? json['client_name']?.toString(),
-      location: json['location']?.toString(),
-      status: json['status']?.toString() ?? 'Planning',
-      startDate: json['start_date']?.toString() ?? json['startDate']?.toString(),
-      endDate: json['end_date']?.toString() ?? json['endDate']?.toString(),
-      estimateValue: json['estimate_value']?.toString() ?? json['estimateValue']?.toString(),
-      description: json['description']?.toString(),
+      id: _firstNonEmpty([json['id'], json['project_id'], json['projectId']]) ?? '',
+      name: _firstNonEmpty([json['name'], json['project_name'], json['projectName']]) ?? 'Unnamed Project',
+      client: _firstNonEmpty([json['client'], json['client_name'], json['clientName']]),
+      location: _firstNonEmpty([json['location']]),
+      status: _firstNonEmpty([json['status']]) ?? 'Planning',
+      startDate: _firstNonEmpty([
+        json['start_date'],
+        json['startDate'],
+        json['project_startdate'],
+        json['product_duration'],
+      ]),
+      endDate: _firstNonEmpty([json['end_date'], json['endDate']]),
+      estimateValue: _firstNonEmpty([json['estimate_value'], json['estimateValue'], json['value']]),
+      description: _firstNonEmpty([json['description']]),
       rawData: json,
     );
   }
@@ -42,13 +55,18 @@ class Project {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'project_id': id,
       'name': name,
+      'project_name': name,
       'client': client,
+      'client_name': client,
       'location': location,
       'status': status,
       'start_date': startDate,
+      'project_startdate': startDate,
       'end_date': endDate,
       'estimate_value': estimateValue,
+      'value': estimateValue,
       'description': description,
     };
   }

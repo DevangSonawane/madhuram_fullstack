@@ -72,7 +72,9 @@ class ProjectState {
       selectedProject?['id']?.toString() ?? 
       selectedProject?['project_id']?.toString();
   
-  String? get selectedProjectName => selectedProject?['name'] as String?;
+  String? get selectedProjectName =>
+      selectedProject?['name']?.toString() ??
+      selectedProject?['project_name']?.toString();
 }
 
 /// Theme Mode enum matching React ThemeContext

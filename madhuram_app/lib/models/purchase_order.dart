@@ -141,40 +141,95 @@ class PurchaseOrder {
   });
 
   factory PurchaseOrder.fromJson(Map<String, dynamic> json) {
-    final vendorJson = json['vendor'] as Map<String, dynamic>?;
-    final itemsJson = json['items'] as List?;
-    final discountJson = json['discount'] as Map<String, dynamic>?;
-    final taxesJson = json['taxes'] as Map<String, dynamic>?;
-    final summaryJson = json['summary'] as Map<String, dynamic>?;
+    final vendorRaw = json['vendor'];
+    Map<String, dynamic>? vendorJson;
+    if (vendorRaw is Map) {
+      vendorJson = Map<String, dynamic>.from(vendorRaw);
+    } else {
+      final flatVendorName = json['vendor_name']?.toString();
+      if (flatVendorName != null && flatVendorName.isNotEmpty) {
+        vendorJson = {
+          'name': flatVendorName,
+          'site': json['site'],
+          'address': json['vendor_address'],
+          'contactPerson': json['contact_person'],
+          'contacts': {
+            'primary': {
+              'name': json['primary_contact_name'],
+              'number': json['primary_contact_number'],
+            },
+            'secondary': {
+              'name': json['secondary_contact_name'],
+              'number': json['secondary_contact_number'],
+            },
+          },
+        };
+      }
+    }
+    final itemsRaw = json['items'];
+    final itemsJson = itemsRaw is List ? itemsRaw : const [];
+    final discountRaw = json['discount'];
+    final discountJson = discountRaw is Map
+        ? Map<String, dynamic>.from(discountRaw)
+        : null;
+    final taxesRaw = json['taxes'];
+    final taxesJson = taxesRaw is Map
+        ? Map<String, dynamic>.from(taxesRaw)
+        : null;
+    final summaryRaw = json['summary'];
+    final summaryJson = summaryRaw is Map
+        ? Map<String, dynamic>.from(summaryRaw)
+        : null;
+    final notesRaw = json['notes'];
+    final termsRaw = json['termsAndConditions'];
 
     return PurchaseOrder(
       id: (json['po_id'] ?? json['id'] ?? '').toString(),
       projectId: json['project_id']?.toString(),
-      orderNo: json['order_no'] ?? json['orderNo'] ?? '',
-      poDate: json['po_date'] ?? json['poDate'],
-      indentNo: json['indent_no'] ?? json['indentNo'],
-      indentDate: json['indent_date'] ?? json['indentDate'],
-      companyName: json['companyName'],
-      companySubtitle: json['companySubtitle'],
-      companyAddress: json['companyAddress'],
-      companyEmail: json['companyEmail'],
-      companyGstNo: json['companyGstNo'],
-      vendor: vendorJson != null ? PurchaseOrderVendor.fromJson(vendorJson) : null,
-      items: itemsJson?.map((e) => PurchaseOrderItem.fromJson(e)).toList() ?? [],
-      discountPercent: discountJson?['percent']?.toString(),
-      discountAmount: discountJson?['amount']?.toString(),
-      afterDiscountAmount: json['afterDiscountAmount']?.toString(),
-      cgstPercent: taxesJson?['cgst']?['percent']?.toString(),
-      cgstAmount: taxesJson?['cgst']?['amount']?.toString(),
-      sgstPercent: taxesJson?['sgst']?['percent']?.toString(),
-      sgstAmount: taxesJson?['sgst']?['amount']?.toString(),
-      totalAmount: json['total_amount']?.toString() ?? json['totalAmount']?.toString(),
-      delivery: summaryJson?['delivery'],
-      payment: summaryJson?['payment'],
-      notes: json['notes'] != null ? List<String>.from(json['notes']) : null,
-      termsAndConditions: json['termsAndConditions'] != null
-          ? List<String>.from(json['termsAndConditions'])
+      orderNo: (json['order_no'] ?? json['orderNo'] ?? '').toString(),
+      poDate: (json['po_date'] ?? json['poDate'])?.toString(),
+      indentNo: (json['indent_no'] ?? json['indentNo'])?.toString(),
+      indentDate: (json['indent_date'] ?? json['indentDate'])?.toString(),
+      companyName: (json['company_name'] ?? json['companyName'])?.toString(),
+      companySubtitle: (json['company_subtitle'] ?? json['companySubtitle'])
+          ?.toString(),
+      companyAddress: (json['company_address'] ?? json['companyAddress'])
+          ?.toString(),
+      companyEmail: (json['company_email'] ?? json['companyEmail'])?.toString(),
+      companyGstNo: (json['company_gst'] ?? json['companyGstNo'])?.toString(),
+      vendor: vendorJson != null
+          ? PurchaseOrderVendor.fromJson(vendorJson)
           : null,
+      items: itemsJson
+          .whereType<Map>()
+          .map((e) => PurchaseOrderItem.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      discountPercent: (json['discount'] ?? discountJson?['percent'])
+          ?.toString(),
+      discountAmount: (json['discount_amount'] ?? discountJson?['amount'])
+          ?.toString(),
+      afterDiscountAmount:
+          (json['after_discount'] ?? json['afterDiscountAmount'])?.toString(),
+      cgstPercent: (json['cgst'] ?? taxesJson?['cgst']?['percent'])?.toString(),
+      cgstAmount: (json['cgst_amount'] ?? taxesJson?['cgst']?['amount'])
+          ?.toString(),
+      sgstPercent: (json['sgst'] ?? taxesJson?['sgst']?['percent'])?.toString(),
+      sgstAmount: (json['sgst_amount'] ?? taxesJson?['sgst']?['amount'])
+          ?.toString(),
+      totalAmount:
+          json['total_amount']?.toString() ?? json['totalAmount']?.toString(),
+      delivery: (json['delivery'] ?? summaryJson?['delivery'])?.toString(),
+      payment: (json['payment'] ?? summaryJson?['payment'])?.toString(),
+      notes: notesRaw is List
+          ? notesRaw.map((e) => e.toString()).toList()
+          : (notesRaw is String && notesRaw.trim().isNotEmpty
+                ? [notesRaw]
+                : null),
+      termsAndConditions: termsRaw is List
+          ? termsRaw.map((e) => e.toString()).toList()
+          : (termsRaw is String && termsRaw.trim().isNotEmpty
+                ? [termsRaw]
+                : null),
       status: json['status'] ?? 'Draft',
       source: json['source'],
       sourceFileName: json['sourceFileName'],
@@ -201,20 +256,14 @@ class PurchaseOrder {
     'companyGstNo': companyGstNo,
     'vendor': vendor?.toJson(),
     'items': items.map((e) => e.toJson()).toList(),
-    'discount': {
-      'percent': discountPercent,
-      'amount': discountAmount,
-    },
+    'discount': {'percent': discountPercent, 'amount': discountAmount},
     'afterDiscountAmount': afterDiscountAmount,
     'taxes': {
       'cgst': {'percent': cgstPercent, 'amount': cgstAmount},
       'sgst': {'percent': sgstPercent, 'amount': sgstAmount},
     },
     'total_amount': totalAmount,
-    'summary': {
-      'delivery': delivery,
-      'payment': payment,
-    },
+    'summary': {'delivery': delivery, 'payment': payment},
     'notes': notes,
     'termsAndConditions': termsAndConditions,
     'status': status,

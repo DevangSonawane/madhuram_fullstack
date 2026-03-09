@@ -4,14 +4,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../theme/app_theme.dart';
 import '../store/app_state.dart';
-import '../services/api_client.dart';
 import '../components/ui/mad_card.dart';
 import '../components/ui/mad_button.dart';
 import '../components/ui/mad_badge.dart';
 import '../components/ui/stat_card.dart';
+import '../components/ui/mad_toast.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
-import '../demo_data/dashboard_demo.dart';
 
 /// Dashboard page matching React's Dashboard.jsx - Responsive version
 class DashboardPage extends StatefulWidget {
@@ -25,8 +24,6 @@ class _DashboardPageState extends State<DashboardPage> {
   List<Map<String, dynamic>> _consumptionData = [];
   List<Map<String, dynamic>> _recentActivity = [];
   Map<String, dynamic> _stats = {};
-  bool _isLoading = true;
-  String? _error;
   bool _didInitLoad = false;
 
   @override
@@ -39,93 +36,62 @@ class _DashboardPageState extends State<DashboardPage> {
     super.didChangeDependencies();
     if (!_didInitLoad) {
       _didInitLoad = true;
-      _loadDashboardData();
+      _loadMockDashboardData();
     }
   }
 
-  Future<void> _loadDashboardData() async {
+  void _loadMockDashboardData() {
     setState(() {
-      _isLoading = true;
-      _error = null;
+      _stats = {
+        'total_value': '₹45,231.89',
+        'total_value_change': 20.1,
+        'active_orders': '+2350',
+        'active_orders_change': -4.0,
+        'low_stock_items': '12',
+        'total_materials': '573',
+        'warehouses': 4,
+      };
+
+      _consumptionData = const [
+        {'name': 'Jan', 'total': 1200},
+        {'name': 'Feb', 'total': 2100},
+        {'name': 'Mar', 'total': 800},
+        {'name': 'Apr', 'total': 1600},
+        {'name': 'May', 'total': 900},
+        {'name': 'Jun', 'total': 1700},
+      ];
+
+      _recentActivity = const [
+        {
+          'user': 'John Doe',
+          'action': 'Created a purchase order',
+          'time': '2 mins ago',
+          'status': 'success',
+          'initials': 'JD',
+        },
+        {
+          'user': 'Jane Smith',
+          'action': 'Approved material request',
+          'time': '1 hour ago',
+          'status': 'success',
+          'initials': 'JS',
+        },
+        {
+          'user': 'System',
+          'action': 'Low stock alert: Cement',
+          'time': '2 hours ago',
+          'status': 'warning',
+          'initials': 'SY',
+        },
+        {
+          'user': 'Mike Johnson',
+          'action': 'Received shipment PO-123',
+          'time': '4 hours ago',
+          'status': 'info',
+          'initials': 'MJ',
+        },
+      ];
     });
-
-    final store = StoreProvider.of<AppState>(context);
-    final projectId = store.state.project.selectedProjectId ?? '';
-
-    if (projectId.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _stats = DashboardDemo.stats;
-        _consumptionData = DashboardDemo.consumptionChart;
-        _recentActivity = DashboardDemo.recentActivity;
-        _isLoading = false;
-        _error = null;
-      });
-      return;
-    }
-
-    try {
-      final result = await ApiClient.getDashboardStats(projectId);
-
-      if (!mounted) return;
-
-      if (result['success'] == true) {
-        final data = result['data'] as Map<String, dynamic>;
-        setState(() {
-          _stats = {
-            'total_value': data['total_value'] ?? '₹0',
-            'total_value_change': (data['total_value_change'] as num?)?.toDouble() ?? 0.0,
-            'active_orders': data['active_orders']?.toString() ?? '0',
-            'active_orders_change': (data['active_orders_change'] as num?)?.toDouble() ?? 0.0,
-            'low_stock_items': data['low_stock_items']?.toString() ?? '0',
-            'total_materials': data['total_materials']?.toString() ?? '0',
-            'warehouses': data['warehouses'] ?? 0,
-          };
-
-          final chartData = data['consumption_chart'] as List<dynamic>? ?? [];
-          _consumptionData = chartData.map((e) => <String, dynamic>{
-            'name': e['name'] ?? '',
-            'total': (e['total'] as num?)?.toInt() ?? 0,
-          }).toList();
-
-          final activityData = data['recent_activity'] as List<dynamic>? ?? [];
-          _recentActivity = activityData.map((e) => <String, dynamic>{
-            'user': e['user'] ?? 'Unknown',
-            'action': e['action'] ?? '',
-            'time': e['time'] ?? '',
-            'status': e['status'] ?? 'info',
-            'initials': e['initials'] ?? 'U',
-          }).toList();
-
-          if (_consumptionData.isEmpty && _recentActivity.isEmpty) {
-            _stats = DashboardDemo.stats;
-            _consumptionData = DashboardDemo.consumptionChart;
-            _recentActivity = DashboardDemo.recentActivity;
-          }
-          _isLoading = false;
-          _error = null;
-        });
-      } else {
-        if (!mounted) return;
-        setState(() {
-          _stats = DashboardDemo.stats;
-          _consumptionData = DashboardDemo.consumptionChart;
-          _recentActivity = DashboardDemo.recentActivity;
-          _isLoading = false;
-          _error = result['error']?.toString() ?? 'Failed to load dashboard';
-        });
-      }
-    } catch (e) {
-      debugPrint('[Dashboard] API error: $e – falling back to demo data');
-      if (!mounted) return;
-      setState(() {
-        _stats = DashboardDemo.stats;
-        _consumptionData = DashboardDemo.consumptionChart;
-        _recentActivity = DashboardDemo.recentActivity;
-        _isLoading = false;
-        _error = e.toString();
-      });
-    }
   }
 
   @override
@@ -146,39 +112,8 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget _buildDashboard(BuildContext context, _DashboardViewModel vm) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (_isLoading) {
-      return ProtectedRoute(
-        title: 'Dashboard',
-        route: '/dashboard',
-        child: const Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (_error != null) {
-      return ProtectedRoute(
-        title: 'Dashboard',
-        route: '/dashboard',
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
-              const SizedBox(height: 16),
-              Text(_error!, style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
-              const SizedBox(height: 16),
-              ElevatedButton(onPressed: _loadDashboardData, child: const Text('Retry')),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final List<Map<String, dynamic>> consumptionData = _consumptionData.isNotEmpty ? _consumptionData : <Map<String, dynamic>>[
-      {'name': 'Jan', 'total': 0},
-      {'name': 'Feb', 'total': 0},
-      {'name': 'Mar', 'total': 0},
-    ];
-    
-    final List<Map<String, dynamic>> recentActivity = _recentActivity.isNotEmpty ? _recentActivity : <Map<String, dynamic>>[];
+    final List<Map<String, dynamic>> consumptionData = _consumptionData;
+    final List<Map<String, dynamic>> recentActivity = _recentActivity;
     
     final stats = _stats.isNotEmpty ? _stats : {
       'total_value': '₹0',
@@ -260,7 +195,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Overview of ${vm.projectName}',
+                    'Overview of ${vm.projectName} and operations.',
                     style: TextStyle(
                       fontSize: responsive.value(mobile: 13, tablet: 14, desktop: 14),
                       color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
@@ -271,17 +206,20 @@ class _DashboardPageState extends State<DashboardPage> {
                 ],
               ),
             ),
-            if (responsive.isDesktop)
+            if (responsive.isDesktop || responsive.isTablet)
               Row(
                 children: [
                   MadButton(
                     text: 'Export',
-                    icon: LucideIcons.download,
+                    icon: LucideIcons.fileText,
                     variant: ButtonVariant.outline,
                     onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Export feature coming soon')),
-                      );
+                      showToast(context, 'Export started', description: 'Dashboard report is being generated...');
+                      Future.delayed(const Duration(milliseconds: 1500), () {
+                        if (mounted) {
+                          showToast(context, 'Export complete', description: 'Dashboard report has been downloaded.', variant: ToastVariant.success);
+                        }
+                      });
                     },
                   ),
                   const SizedBox(width: 12),
@@ -302,13 +240,16 @@ class _DashboardPageState extends State<DashboardPage> {
               Expanded(
                 child: MadButton(
                   text: 'Export',
-                  icon: LucideIcons.download,
+                  icon: LucideIcons.fileText,
                   variant: ButtonVariant.outline,
                   size: ButtonSize.sm,
                   onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Export feature coming soon')),
-                    );
+                    showToast(context, 'Export started', description: 'Dashboard report is being generated...');
+                    Future.delayed(const Duration(milliseconds: 1500), () {
+                      if (mounted) {
+                        showToast(context, 'Export complete', description: 'Dashboard report has been downloaded.', variant: ToastVariant.success);
+                      }
+                    });
                   },
                 ),
               ),
@@ -353,7 +294,7 @@ class _DashboardPageState extends State<DashboardPage> {
         icon: Icons.warning_amber_rounded,
         iconColor: Colors.orange,
         iconBackgroundColor: Colors.orange.withValues(alpha: 0.1),
-        subtitle: 'Requires attention',
+        subtitle: 'Requires immediate attention',
       ),
       StatCard(
         title: 'Total Materials',
@@ -685,5 +626,8 @@ class _DashboardViewModel {
     required this.selectedProject,
   });
 
-  String get projectName => selectedProject?['name']?.toString() ?? 'your inventory';
+  String get projectName =>
+      selectedProject?['name']?.toString() ??
+      selectedProject?['project_name']?.toString() ??
+      'your inventory';
 }

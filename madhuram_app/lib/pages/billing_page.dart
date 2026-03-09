@@ -8,7 +8,6 @@ import '../services/api_client.dart';
 import '../models/billing.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
-import '../demo_data/remaining_modules_demo.dart';
 
 /// Billing page with full implementation
 class BillingPageFull extends StatefulWidget {
@@ -18,11 +17,9 @@ class BillingPageFull extends StatefulWidget {
 }
 
 class _BillingPageFullState extends State<BillingPageFull> {
-  // START WITH DEMO DATA – never show blank
   bool _isLoading = false;
-  List<Bill> _bills = BillingDemo.bills
-      .map((e) => Bill.fromJson(e))
-      .toList();
+  String? _error;
+  List<Bill> _bills = [];
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -32,7 +29,6 @@ class _BillingPageFullState extends State<BillingPageFull> {
   @override
   void initState() {
     super.initState();
-    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadBills();
     });
@@ -44,22 +40,23 @@ class _BillingPageFullState extends State<BillingPageFull> {
     super.dispose();
   }
 
-  void _seedDemoData() {
-    debugPrint('[Billing] API unavailable – falling back to demo data');
-    setState(() {
-      _bills = BillingDemo.bills.map((e) => Bill.fromJson(e)).toList();
-      _isLoading = false;
-    });
-  }
-
   Future<void> _loadBills() async {
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
 
     if (projectId.isEmpty) {
-      _seedDemoData();
+      setState(() {
+        _bills = [];
+        _isLoading = false;
+        _error = 'No project selected';
+      });
       return;
     }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
     try {
       final result = await ApiClient.getBillingByProject(projectId);
@@ -67,21 +64,25 @@ class _BillingPageFullState extends State<BillingPageFull> {
       if (result['success'] == true) {
         final data = result['data'] as List;
         final loaded = data.map((e) => Bill.fromJson(e)).toList();
-        if (loaded.isEmpty) {
-          _seedDemoData();
-        } else {
-          setState(() {
-            _bills = loaded;
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _bills = loaded;
+          _isLoading = false;
+        });
       } else {
-        _seedDemoData();
+        setState(() {
+          _bills = [];
+          _isLoading = false;
+          _error = result['error']?.toString() ?? 'Failed to load bills';
+        });
       }
     } catch (e) {
-      debugPrint('[Billing] API error: $e – falling back to demo data');
+      debugPrint('[Billing] API error: $e');
       if (!mounted) return;
-      _seedDemoData();
+      setState(() {
+        _bills = [];
+        _isLoading = false;
+        _error = 'Failed to load bills';
+      });
     }
   }
 
@@ -139,7 +140,13 @@ class _BillingPageFullState extends State<BillingPageFull> {
         ]),
         const SizedBox(height: 24),
         Expanded(
-          child: _isLoading ? const Center(child: CircularProgressIndicator()) : _filteredBills.isEmpty ? _buildEmptyState(isDark) : MadCard(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? _buildErrorState(isDark, _error!)
+                  : _filteredBills.isEmpty
+                      ? _buildEmptyState(isDark)
+                      : MadCard(
             child: Column(children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -211,6 +218,26 @@ class _BillingPageFullState extends State<BillingPageFull> {
       const SizedBox(height: 24),
       MadButton(text: 'Create Invoice', icon: LucideIcons.plus, onPressed: () => _showInvoiceDialog()),
     ])));
+  }
+
+  Widget _buildErrorState(bool isDark, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            Text('Failed to load bills', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground)),
+            const SizedBox(height: 8),
+            Text(message, style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), textAlign: TextAlign.center),
+            const SizedBox(height: 24),
+            MadButton(text: 'Retry', icon: LucideIcons.refreshCw, onPressed: _loadBills),
+          ],
+        ),
+      ),
+    );
   }
 
   void _markBillPaid(Bill bill) {

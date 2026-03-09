@@ -9,7 +9,6 @@ import '../models/stock_area.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
-import '../demo_data/remaining_modules_demo.dart';
 
 /// Consumption tracking page matching React's Consumption page
 class ConsumptionPage extends StatefulWidget {
@@ -20,11 +19,9 @@ class ConsumptionPage extends StatefulWidget {
 }
 
 class _ConsumptionPageState extends State<ConsumptionPage> {
-  // START WITH DEMO DATA – never show blank
   bool _isLoading = false;
-  List<Consumption> _consumptions = ConsumptionDemo.consumptions
-      .map((e) => Consumption.fromJson(e))
-      .toList();
+  String? _error;
+  List<Consumption> _consumptions = [];
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
@@ -34,7 +31,6 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
   @override
   void initState() {
     super.initState();
-    // Try real API in background; demo data already visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadConsumptions();
     });
@@ -46,22 +42,23 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
     super.dispose();
   }
 
-  void _seedDemoData() {
-    debugPrint('[Consumption] API unavailable – falling back to demo data');
-    setState(() {
-      _consumptions = ConsumptionDemo.consumptions.map((e) => Consumption.fromJson(e)).toList();
-      _isLoading = false;
-    });
-  }
-
   Future<void> _loadConsumptions() async {
     final store = StoreProvider.of<AppState>(context);
     final projectId = store.state.project.selectedProjectId ?? '';
 
     if (projectId.isEmpty) {
-      _seedDemoData();
+      setState(() {
+        _consumptions = [];
+        _isLoading = false;
+        _error = 'No project selected';
+      });
       return;
     }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
     try {
       final result = await ApiClient.getConsumption(projectId);
@@ -71,21 +68,25 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
       if (result['success'] == true) {
         final data = result['data'] as List;
         final loaded = data.map((e) => Consumption.fromJson(e)).toList();
-        if (loaded.isEmpty) {
-          _seedDemoData();
-        } else {
-          setState(() {
-            _consumptions = loaded;
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _consumptions = loaded;
+          _isLoading = false;
+        });
       } else {
-        _seedDemoData();
+        setState(() {
+          _consumptions = [];
+          _isLoading = false;
+          _error = result['error']?.toString() ?? 'Failed to load consumption';
+        });
       }
     } catch (e) {
-      debugPrint('[Consumption] API error: $e – falling back to demo data');
+      debugPrint('[Consumption] API error: $e');
       if (!mounted) return;
-      _seedDemoData();
+      setState(() {
+        _consumptions = [];
+        _isLoading = false;
+        _error = 'Failed to load consumption';
+      });
     }
   }
 
@@ -126,16 +127,19 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
         .toList();
   }
 
-  /// Mock consumption by floor for chart; top floor by value is 1st (180).
-  static const _consumptionByFloorMock = [
-    {'floor': 'Ground', 'value': 120.0},
-    {'floor': '1st', 'value': 180.0},
-    {'floor': '2nd', 'value': 90.0},
-    {'floor': '3rd', 'value': 150.0},
-  ];
+  List<Map<String, dynamic>> get _consumptionByFloor {
+    final totals = <String, double>{};
+    for (final c in _consumptions) {
+      final floor = (c.floor ?? 'Unknown').toString();
+      totals[floor] = (totals[floor] ?? 0) + c.quantity;
+    }
+    return totals.entries
+        .map((e) => {'floor': e.key, 'value': e.value})
+        .toList();
+  }
 
   String get _topDepartmentFloor {
-    const data = _consumptionByFloorMock;
+    final data = _consumptionByFloor;
     if (data.isEmpty) return '-';
     var max = data.first;
     for (final e in data) {
@@ -193,7 +197,7 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
           ),
           const SizedBox(height: 24),
 
-          // Consumption by floor bar chart (mock data)
+          // Consumption by floor bar chart
           _buildConsumptionByFloorChart(isDark, isMobile),
           const SizedBox(height: 24),
 
@@ -288,11 +292,13 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredConsumptions.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : MadCard(
-                        child: Column(
-                          children: [
+                : _error != null
+                    ? _buildErrorState(isDark, _error!)
+                    : _filteredConsumptions.isEmpty
+                        ? _buildEmptyState(isDark)
+                        : MadCard(
+                            child: Column(
+                              children: [
                             // Table header
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -382,7 +388,7 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
   }
 
   Widget _buildConsumptionByFloorChart(bool isDark, bool isMobile) {
-    const data = _consumptionByFloorMock;
+    final data = _consumptionByFloor;
     final maxY = data.map((e) => e['value'] as double).reduce((a, b) => a > b ? a : b) * 1.2;
 
     return MadCard(
@@ -398,7 +404,7 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
                 color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
               ),
             ),
-            subtitle: const MadCardDescription('Material consumption by floor (mock data).'),
+            subtitle: const MadCardDescription('Material consumption by floor.'),
           ),
           MadCardContent(
             child: SizedBox(
@@ -600,6 +606,33 @@ class _ConsumptionPageState extends State<ConsumptionPage> {
                 onPressed: () => _showConsumptionDialog(),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(bool isDark, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load consumption',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: TextStyle(color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            MadButton(text: 'Retry', icon: LucideIcons.refreshCw, onPressed: _loadConsumptions),
           ],
         ),
       ),

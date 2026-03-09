@@ -8,7 +8,6 @@ import '../services/api_client.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
-import '../demo_data/additional_modules_demo.dart';
 
 /// Projects list page with full CRUD - matches React Projects.jsx
 class ProjectsPage extends StatefulWidget {
@@ -57,19 +56,19 @@ class _ProjectsPageState extends State<ProjectsPage> {
           _error = null;
         });
       } else {
-        debugPrint('[Projects] API returned failure – falling back to demo data');
+        debugPrint('[Projects] API returned failure');
         if (!mounted) return;
         setState(() {
-          _projects = List<Map<String, dynamic>>.from(ProjectsDemo.projects);
+          _projects = [];
           _isLoading = false;
           _error = result['error']?.toString() ?? 'Failed to load projects';
         });
       }
     } catch (e) {
-      debugPrint('[Projects] API error: $e – falling back to demo data');
+      debugPrint('[Projects] API error: $e');
       if (!mounted) return;
       setState(() {
-        _projects = List<Map<String, dynamic>>.from(ProjectsDemo.projects);
+        _projects = [];
         _isLoading = false;
         _error = e.toString();
       });

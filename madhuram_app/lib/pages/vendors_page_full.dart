@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../theme/app_theme.dart';
-import '../services/api_client.dart';
-import '../models/vendor.dart';
-import '../components/ui/components.dart';
-import '../components/layout/main_layout.dart';
-import '../utils/responsive.dart';
-import '../demo_data/vendors_demo.dart';
 
-/// Vendors page with full implementation
+import '../components/layout/main_layout.dart';
+import '../components/ui/components.dart';
+import '../models/vendor.dart';
+import '../services/api_client.dart';
+import '../store/app_state.dart';
+import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
+
 class VendorsPageFull extends StatefulWidget {
   const VendorsPageFull({super.key});
 
@@ -17,24 +18,25 @@ class VendorsPageFull extends StatefulWidget {
 }
 
 class _VendorsPageFullState extends State<VendorsPageFull> {
-  // START WITH DEMO DATA – never show blank
+  static const List<String> _statusOptions = ['active', 'inactive', 'blocked'];
+
+  final TextEditingController _searchController = TextEditingController();
+
+  List<Vendor> _vendors = [];
   bool _isLoading = false;
-  List<Vendor> _vendors = VendorsDemo.vendors
-      .map((e) => Vendor.fromJson(e))
-      .toList();
-  String _searchQuery = '';
-  int _currentPage = 1;
-  final int _itemsPerPage = 10;
-  final _searchController = TextEditingController();
-  String? _statusFilter;
+  String? _error;
+
+  String _query = '';
+  String _statusFilter = 'all';
+  String _projectFilter = 'all';
+
+  String? _selectedProjectId;
+  String? _lastLoadedProjectId;
 
   @override
   void initState() {
     super.initState();
-    // Try real API in background; demo data already visible
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadVendors();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadVendors());
   }
 
   @override
@@ -43,87 +45,465 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
     super.dispose();
   }
 
-  /// Seed with demo data when API is unavailable
-  void _seedDemoData() {
-    debugPrint('[Vendors] API unavailable – falling back to demo data');
-    setState(() {
-      _vendors = VendorsDemo.vendors.map((e) => Vendor.fromJson(e)).toList();
-      _isLoading = false;
-    });
-  }
-
   Future<void> _loadVendors() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
     try {
-      final result = await ApiClient.getVendors();
+      final result = (_selectedProjectId != null && _selectedProjectId!.isNotEmpty)
+          ? await ApiClient.getVendorsByProject(_selectedProjectId!)
+          : await ApiClient.getVendors();
 
       if (!mounted) return;
 
       if (result['success'] == true) {
-        final data = result['data'] as List;
-        final loaded = data.map((e) => Vendor.fromJson(e)).toList();
-        if (loaded.isEmpty) {
-          debugPrint('[Vendors] API returned empty list – falling back to demo data');
-          _seedDemoData();
-        } else {
-          setState(() {
-            _vendors = loaded;
-            _isLoading = false;
-          });
-        }
+        final raw = (result['data'] as List?) ?? const [];
+        setState(() {
+          _vendors = raw
+              .whereType<Map>()
+              .map((row) => Vendor.fromJson(Map<String, dynamic>.from(row)))
+              .toList();
+          _isLoading = false;
+        });
       } else {
-        _seedDemoData();
+        final message = result['error']?.toString() ?? 'Could not fetch vendor list.';
+        setState(() {
+          _vendors = [];
+          _isLoading = false;
+          _error = message;
+        });
       }
-    } catch (e) {
-      debugPrint('[Vendors] API error: $e – falling back to demo data');
+    } catch (_) {
       if (!mounted) return;
-      _seedDemoData();
+      setState(() {
+        _vendors = [];
+        _isLoading = false;
+        _error = 'Could not fetch vendor list.';
+      });
     }
+  }
+
+  List<String> get _projectOptions {
+    final set = _vendors.map((v) => v.projectId).whereType<String>().where((id) => id.isNotEmpty).toSet().toList();
+    set.sort((a, b) {
+      final intA = int.tryParse(a);
+      final intB = int.tryParse(b);
+      if (intA != null && intB != null) return intA.compareTo(intB);
+      return a.compareTo(b);
+    });
+    return set;
   }
 
   List<Vendor> get _filteredVendors {
-    List<Vendor> result = _vendors;
+    final q = _query.trim().toLowerCase();
 
-    if (_searchQuery.isNotEmpty) {
-      final query = _searchQuery.toLowerCase();
-      result = result.where((v) {
-        return v.name.toLowerCase().contains(query) ||
-            (v.contactPerson?.toLowerCase().contains(query) ?? false) ||
-            (v.email?.toLowerCase().contains(query) ?? false);
-      }).toList();
-    }
+    return _vendors.where((vendor) {
+      final name = vendor.name.toLowerCase();
+      final company = (vendor.companyName ?? '').toLowerCase();
+      final email = (vendor.email ?? '').toLowerCase();
+      final phone = (vendor.phone ?? '').toLowerCase();
+      final location = (vendor.location ?? '').toLowerCase();
+      final status = vendor.status.toLowerCase();
 
-    if (_statusFilter != null) {
-      result = result.where((v) => v.status == _statusFilter).toList();
-    }
+      final matchesSearch = q.isEmpty ||
+          name.contains(q) ||
+          company.contains(q) ||
+          email.contains(q) ||
+          phone.contains(q) ||
+          location.contains(q);
 
-    return result;
+      final matchesStatus = _statusFilter == 'all' || status == _statusFilter;
+      final matchesProject = _projectFilter == 'all' || vendor.projectId == _projectFilter;
+
+      return matchesSearch && matchesStatus && matchesProject;
+    }).toList();
   }
 
-  List<Vendor> get _paginatedVendors {
-    final start = (_currentPage - 1) * _itemsPerPage;
-    final end = start + _itemsPerPage;
-    final filtered = _filteredVendors;
-    if (start >= filtered.length) return [];
-    return filtered.sublist(start, end > filtered.length ? filtered.length : end);
+  int get _activeCount => _vendors.where((v) => v.status.toLowerCase() == 'active').length;
+
+  int get _blockedCount => _vendors.where((v) => v.status.toLowerCase() == 'blocked').length;
+
+  int get _projectsCovered => _vendors.map((v) => v.projectId).whereType<String>().where((id) => id.isNotEmpty).toSet().length;
+
+  String _capitalize(String value) {
+    if (value.isEmpty) return value;
+    return value[0].toUpperCase() + value.substring(1).toLowerCase();
   }
 
-  int get _totalPages => (_filteredVendors.length / _itemsPerPage).ceil();
+  InputDecoration _selectDecoration(bool isDark, {String? labelText}) {
+    return InputDecoration(
+      labelText: labelText,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      filled: true,
+      fillColor: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withValues(alpha: 0.5),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: AppTheme.primaryColor.withValues(alpha: 0.4)),
+      ),
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final responsive = Responsive(context);
-    final isMobile = responsive.isMobile;
+  void _showSnack(String text, {bool destructive = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: destructive ? const Color(0xFFDC2626) : null,
+      ),
+    );
+  }
 
-    return ProtectedRoute(
-      title: 'Vendors',
-      route: '/vendors',
+  Future<void> _goToAddVendorPage() async {
+    final created = await Navigator.pushNamed(context, '/vendors/new');
+    if (!mounted) return;
+    if (created == true) {
+      await _loadVendors();
+    }
+  }
+
+  Future<void> _openVendorDialog({Vendor? vendor}) async {
+    final isEditing = vendor != null;
+    final nameController = TextEditingController(text: vendor?.name ?? '');
+    final projectController = TextEditingController(text: vendor?.projectId ?? (_selectedProjectId ?? ''));
+    final companyController = TextEditingController(text: vendor?.companyName ?? '');
+    final emailController = TextEditingController(text: vendor?.email ?? '');
+    final mobileController = TextEditingController(text: vendor?.phone ?? '');
+    final locationController = TextEditingController(text: vendor?.location ?? '');
+
+    String selectedStatus = (vendor?.status.isNotEmpty == true) ? vendor!.status.toLowerCase() : 'active';
+    bool submitting = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isEditing ? 'Edit Vendor' : 'Create Vendor',
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Update vendor details and status.',
+                        style: TextStyle(
+                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              MadInput(
+                                controller: nameController,
+                                labelText: 'Vendor Name *',
+                                hintText: 'Enter vendor name',
+                              ),
+                              const SizedBox(height: 14),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: MadInput(
+                                      controller: projectController,
+                                      labelText: 'Project ID',
+                                      hintText: 'Enter project ID',
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: DropdownButtonFormField<String>(
+                                      initialValue: selectedStatus,
+                                      isExpanded: true,
+                                      decoration: _selectDecoration(isDark, labelText: 'Status'),
+                                      items: _statusOptions
+                                          .map((status) => DropdownMenuItem<String>(
+                                                value: status,
+                                                child: Text(status),
+                                              ))
+                                          .toList(),
+                                      onChanged: (value) {
+                                        setDialogState(() {
+                                          selectedStatus = value ?? 'active';
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: MadInput(
+                                      controller: companyController,
+                                      labelText: 'Company Name',
+                                      hintText: 'Enter company name',
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: MadInput(
+                                      controller: emailController,
+                                      labelText: 'Email',
+                                      hintText: 'Enter email address',
+                                      keyboardType: TextInputType.emailAddress,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: MadInput(
+                                      controller: mobileController,
+                                      labelText: 'Mobile Number',
+                                      hintText: 'Enter mobile number',
+                                      keyboardType: TextInputType.phone,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: MadInput(
+                                      controller: locationController,
+                                      labelText: 'Location',
+                                      hintText: 'Enter location',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          MadButton(
+                            text: 'Cancel',
+                            variant: ButtonVariant.outline,
+                            disabled: submitting,
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                          ),
+                          const SizedBox(width: 10),
+                          MadButton(
+                            text: submitting
+                                ? (isEditing ? 'Saving...' : 'Creating...')
+                                : (isEditing ? 'Save Changes' : 'Create Vendor'),
+                            loading: submitting,
+                            disabled: submitting,
+                            onPressed: () async {
+                              final vendorName = nameController.text.trim();
+                              if (vendorName.isEmpty) {
+                                _showSnack('Vendor name required', destructive: true);
+                                return;
+                              }
+
+                              final projectText = projectController.text.trim();
+                              final payload = <String, dynamic>{
+                                'project_id': projectText.isEmpty ? null : int.tryParse(projectText),
+                                'vendor_name': vendorName,
+                                'vendor_company_name': companyController.text.trim(),
+                                'vendor_email': emailController.text.trim(),
+                                'mobile_number': mobileController.text.trim(),
+                                'location': locationController.text.trim(),
+                                'status': selectedStatus,
+                              };
+
+                              setDialogState(() => submitting = true);
+
+                              try {
+                                Map<String, dynamic> result;
+                                if (isEditing) {
+                                  final originalProject = int.tryParse(vendor.projectId ?? '');
+                                  final nextProject = payload['project_id'] as int?;
+                                  final otherFieldsChanged =
+                                      (vendor.name != payload['vendor_name']) ||
+                                      ((vendor.companyName ?? '') != payload['vendor_company_name']) ||
+                                      ((vendor.email ?? '') != payload['vendor_email']) ||
+                                      ((vendor.phone ?? '') != payload['mobile_number']) ||
+                                      ((vendor.location ?? '') != payload['location']) ||
+                                      (originalProject != nextProject);
+                                  final statusChanged = vendor.status.toLowerCase() != selectedStatus;
+
+                                  if (statusChanged && !otherFieldsChanged) {
+                                    result = await ApiClient.updateVendorStatus(vendor.id, selectedStatus);
+                                  } else {
+                                    result = await ApiClient.updateVendor(vendor.id, payload);
+                                  }
+                                } else {
+                                  result = await ApiClient.createVendor(payload);
+                                }
+
+                                if (!mounted) return;
+
+                                if (result['success'] == true) {
+                                  if (dialogContext.mounted) {
+                                    Navigator.of(dialogContext).pop();
+                                  }
+                                  _showSnack(isEditing ? 'Vendor updated' : 'Vendor created');
+                                  await _loadVendors();
+                                } else {
+                                  _showSnack(
+                                    (result['error'] ?? (isEditing ? 'Failed to update vendor' : 'Failed to create vendor'))
+                                        .toString(),
+                                    destructive: true,
+                                  );
+                                  setDialogState(() => submitting = false);
+                                }
+                              } catch (_) {
+                                if (!mounted) return;
+                                _showSnack(
+                                  isEditing ? 'Something went wrong while saving vendor.' : 'Something went wrong while creating vendor.',
+                                  destructive: true,
+                                );
+                                setDialogState(() => submitting = false);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+  }
+
+  Future<void> _openDeleteDialog(Vendor vendor) async {
+    bool deleting = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Delete Vendor', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 10),
+                      Text(
+                        'This will permanently delete ${vendor.name.isEmpty ? 'this vendor' : vendor.name}. This action cannot be undone.',
+                      ),
+                      const SizedBox(height: 22),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          MadButton(
+                            text: 'Cancel',
+                            variant: ButtonVariant.outline,
+                            disabled: deleting,
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                          ),
+                          const SizedBox(width: 10),
+                          MadButton(
+                            text: deleting ? 'Deleting...' : 'Delete Vendor',
+                            variant: ButtonVariant.destructive,
+                            loading: deleting,
+                            disabled: deleting,
+                            onPressed: () async {
+                              setDialogState(() => deleting = true);
+                              try {
+                                final result = await ApiClient.deleteVendor(vendor.id);
+                                if (!mounted) return;
+
+                                if (result['success'] == true) {
+                                  if (dialogContext.mounted) {
+                                    Navigator.of(dialogContext).pop();
+                                  }
+                                  _showSnack('Vendor deleted');
+                                  await _loadVendors();
+                                } else {
+                                  _showSnack(
+                                    (result['error'] ?? 'Could not delete vendor.').toString(),
+                                    destructive: true,
+                                  );
+                                  setDialogState(() => deleting = false);
+                                }
+                              } catch (_) {
+                                if (!mounted) return;
+                                _showSnack('Something went wrong while deleting vendor.', destructive: true);
+                                setDialogState(() => deleting = false);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildHero(bool isDark, bool isMobile) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(isMobile ? 18 : 24),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
+        ),
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFECFEFF),
+            const Color(0xFFE0F2FE),
+            isDark ? AppTheme.darkCard : Colors.white,
+          ],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Column(
@@ -132,16 +512,17 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                     Text(
                       'Vendors',
                       style: TextStyle(
-                        fontSize: responsive.value(mobile: 22, tablet: 26, desktop: 28),
-                        fontWeight: FontWeight.bold,
+                        fontSize: isMobile ? 28 : 32,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
                         color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Text(
-                      'Manage vendor relationships and contacts',
+                      'Manage project vendors in one place.',
                       style: TextStyle(
+                        fontSize: 13,
                         color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
                       ),
                     ),
@@ -151,772 +532,568 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
               if (!isMobile)
                 MadButton(
                   text: 'Add Vendor',
-                  icon: LucideIcons.userPlus,
-                  onPressed: () => _showAddVendorDialog(),
+                  icon: LucideIcons.plus,
+                  onPressed: _goToAddVendorPage,
                 ),
             ],
           ),
-          const SizedBox(height: 24),
-
-          // Stats cards
-          if (!isMobile)
-            Row(
-              children: [
-                Expanded(
-                  child: StatCard(
-                    title: 'Total Vendors',
-                    value: _vendors.length.toString(),
-                    icon: LucideIcons.users,
-                    iconColor: AppTheme.primaryColor,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: StatCard(
-                    title: 'Active',
-                    value: _vendors.where((v) => v.status == 'Active').length.toString(),
-                    icon: LucideIcons.userCheck,
-                    iconColor: const Color(0xFF22C55E),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: StatCard(
-                    title: 'Avg Rating',
-                    value: _vendors.isNotEmpty
-                        ? (_vendors.where((v) => v.rating != null).map((v) => v.rating!).fold(0.0, (a, b) => a + b) /
-                                _vendors.where((v) => v.rating != null).length)
-                            .toStringAsFixed(1)
-                        : '-',
-                    icon: LucideIcons.star,
-                    iconColor: const Color(0xFFF59E0B),
-                  ),
-                ),
-              ],
+          if (isMobile) ...[
+            const SizedBox(height: 14),
+            MadButton(
+              text: 'Add Vendor',
+              icon: LucideIcons.plus,
+              width: double.infinity,
+              onPressed: _goToAddVendorPage,
             ),
-          if (!isMobile) const SizedBox(height: 24),
-
-          // Search and filters
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              SizedBox(
-                width: isMobile ? double.infinity : 320,
-                child: MadSearchInput(
-                  controller: _searchController,
-                  hintText: 'Search vendors...',
-                  onChanged: (value) => setState(() {
-                    _searchQuery = value;
-                    _currentPage = 1;
-                  }),
-                  onClear: () => setState(() {
-                    _searchQuery = '';
-                    _currentPage = 1;
-                  }),
-                ),
-              ),
-              SizedBox(
-                width: isMobile ? double.infinity : 150,
-                child: MadSelect<String>(
-                  value: _statusFilter,
-                  placeholder: 'All Status',
-                  clearable: true,
-                  options: const [
-                    MadSelectOption(value: 'Active', label: 'Active'),
-                    MadSelectOption(value: 'Inactive', label: 'Inactive'),
-                  ],
-                  onChanged: (value) => setState(() {
-                    _statusFilter = value;
-                    _currentPage = 1;
-                  }),
-                ),
-              ),
-              if (isMobile)
-                MadButton(
-                  icon: LucideIcons.userPlus,
-                  text: 'Add',
-                  onPressed: () => _showAddVendorDialog(),
-                ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // Vendor cards/list
-          Expanded(
-            child: _isLoading
-                ? MadCard(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: MadListSkeleton(itemCount: 6, showAvatar: true, showAction: true),
-                    ),
-                  )
-                : _filteredVendors.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : isMobile
-                        ? _buildMobileList(isDark)
-                        : _buildDesktopGrid(isDark),
-          ),
-
-          // Pagination
-          if (_totalPages > 1 && !_isLoading) _buildPagination(isDark),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildDesktopGrid(bool isDark) {
-    return GridView.builder(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 1.4,
+  Widget _buildStatTile({
+    required String title,
+    required String value,
+    required String subtitle,
+    required double width,
+  }) {
+    return SizedBox(
+      width: width,
+      child: MadCard(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                value,
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, height: 1.0),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        ),
       ),
-      itemCount: _paginatedVendors.length,
-      itemBuilder: (context, index) => _buildVendorCard(_paginatedVendors[index], isDark),
     );
   }
 
-  Widget _buildMobileList(bool isDark) {
-    return ListView.separated(
-      itemCount: _paginatedVendors.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) => _buildVendorCard(_paginatedVendors[index], isDark),
-    );
-  }
+  Widget _buildStatsRow(Responsive responsive) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 12.0;
+        final availableWidth = constraints.maxWidth;
 
-  Widget _buildVendorCard(Vendor vendor, bool isDark) {
-    return MadCard(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        int columns;
+        if (responsive.isMobile) {
+          columns = 1;
+        } else if (responsive.isTablet) {
+          columns = 2;
+        } else {
+          columns = 4;
+        }
+
+        final tileWidth = (availableWidth - (spacing * (columns - 1))) / columns;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
           children: [
+            _buildStatTile(
+              title: 'Total Vendors',
+              value: _vendors.length.toString(),
+              subtitle: 'Across loaded scope',
+              width: tileWidth,
+            ),
+            _buildStatTile(
+              title: 'Active',
+              value: _activeCount.toString(),
+              subtitle: 'Ready for procurement',
+              width: tileWidth,
+            ),
+            _buildStatTile(
+              title: 'Blocked',
+              value: _blockedCount.toString(),
+              subtitle: 'Need review before use',
+              width: tileWidth,
+            ),
+            _buildStatTile(
+              title: 'Projects Covered',
+              value: _projectsCovered.toString(),
+              subtitle: 'Distinct project mappings',
+              width: tileWidth,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildStatusBadge(Vendor vendor) {
+    final status = vendor.status.toLowerCase();
+
+    Color textColor;
+    Color bgColor;
+    Color borderColor;
+
+    switch (status) {
+      case 'active':
+        textColor = const Color(0xFF065F46);
+        bgColor = const Color(0xFFD1FAE5);
+        borderColor = const Color(0xFFA7F3D0);
+        break;
+      case 'inactive':
+        textColor = const Color(0xFF92400E);
+        bgColor = const Color(0xFFFEF3C7);
+        borderColor = const Color(0xFFFCD34D);
+        break;
+      case 'blocked':
+        textColor = const Color(0xFF9F1239);
+        bgColor = const Color(0xFFFFE4E6);
+        borderColor = const Color(0xFFFECDD3);
+        break;
+      default:
+        textColor = const Color(0xFF374151);
+        bgColor = const Color(0xFFF3F4F6);
+        borderColor = const Color(0xFFE5E7EB);
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor),
+      ),
+      child: Text(
+        _capitalize(status),
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: textColor,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderCell(String text, {double? width, Alignment alignment = Alignment.centerLeft}) {
+    return Container(
+      alignment: alignment,
+      width: width,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  Widget _buildBodyCell(Widget child, {double? width, Alignment alignment = Alignment.centerLeft}) {
+    return Container(
+      alignment: alignment,
+      width: width,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      child: child,
+    );
+  }
+
+  Widget _buildVendorRow(Vendor vendor, bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
+          ),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildBodyCell(
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(
-                      vendor.name.isNotEmpty ? vendor.name[0].toUpperCase() : 'V',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.primaryColor,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        vendor.name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                        vendor.name.isEmpty ? '-' : vendor.name,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                       ),
-                      if (vendor.contactPerson != null)
-                        Text(
-                          vendor.contactPerson!,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                          ),
-                          overflow: TextOverflow.ellipsis,
+                      const SizedBox(height: 2),
+                      Text(
+                        (vendor.companyName == null || vendor.companyName!.isEmpty) ? '-' : vendor.companyName!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
                         ),
+                      ),
                     ],
                   ),
                 ),
-                MadDropdownMenuButton(
-                  items: [
-                    MadMenuItem(label: 'View Details', icon: LucideIcons.eye, onTap: () => _showVendorDetails(vendor)),
-                    MadMenuItem(label: 'Edit', icon: LucideIcons.pencil, onTap: () => _showEditVendorDialog(vendor)),
-                    MadMenuItem(label: 'Create PO', icon: LucideIcons.shoppingCart, onTap: () {}),
-                    MadMenuItem(label: 'Delete', icon: LucideIcons.trash2, destructive: true, onTap: () => _showDeleteConfirm(vendor)),
+                const SizedBox(width: 8),
+                _buildStatusBadge(vendor),
+              ],
+            ),
+            width: 300,
+          ),
+          _buildBodyCell(
+            Text(vendor.projectId?.isNotEmpty == true ? 'Project ${vendor.projectId}' : '-'),
+            width: 130,
+          ),
+          _buildBodyCell(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      LucideIcons.mail,
+                      size: 12,
+                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        vendor.email?.isNotEmpty == true ? vendor.email! : '-',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(
+                      LucideIcons.phone,
+                      size: 12,
+                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        vendor.phone?.isNotEmpty == true ? vendor.phone! : '-',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                if (vendor.rating != null) ...[
-                  Icon(LucideIcons.star, size: 16, color: const Color(0xFFF59E0B)),
-                  const SizedBox(width: 4),
-                  Text(
-                    vendor.rating!.toStringAsFixed(1),
-                    style: const TextStyle(fontWeight: FontWeight.w500),
-                  ),
-                  const SizedBox(width: 16),
-                ],
-                MadBadge(
-                  text: vendor.status,
-                  variant: vendor.status == 'Active' ? BadgeVariant.default_ : BadgeVariant.secondary,
-                ),
-                if (vendor.type != null && vendor.type!.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  MadBadge(
-                    text: vendor.type!,
-                    variant: BadgeVariant.secondary,
-                  ),
-                ],
-              ],
-            ),
-            const Spacer(),
-            Divider(color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder).withOpacity(0.5)),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                if (vendor.phone != null)
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Icon(
-                          LucideIcons.phone,
-                          size: 14,
-                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            vendor.phone!,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (vendor.email != null)
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Icon(
-                          LucideIcons.mail,
-                          size: 14,
-                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            vendor.email!,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPagination(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            'Showing ${(_currentPage - 1) * _itemsPerPage + 1}-${_currentPage * _itemsPerPage > _filteredVendors.length ? _filteredVendors.length : _currentPage * _itemsPerPage} of ${_filteredVendors.length}',
-            style: TextStyle(
-              fontSize: 13,
-              color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-            ),
+            width: 250,
           ),
-          Row(
-            children: [
-              MadButton(
-                icon: LucideIcons.chevronLeft,
-                variant: ButtonVariant.outline,
-                size: ButtonSize.sm,
-                disabled: _currentPage == 1,
-                onPressed: () => setState(() => _currentPage--),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text('$_currentPage of $_totalPages'),
-              ),
-              MadButton(
-                icon: LucideIcons.chevronRight,
-                variant: ButtonVariant.outline,
-                size: ButtonSize.sm,
-                disabled: _currentPage >= _totalPages,
-                onPressed: () => setState(() => _currentPage++),
-              ),
-            ],
+          _buildBodyCell(
+            Row(
+              children: [
+                Icon(
+                  LucideIcons.mapPin,
+                  size: 14,
+                  color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    vendor.location?.isNotEmpty == true ? vendor.location! : '-',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            width: 180,
+          ),
+          _buildBodyCell(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Two icon buttons need ~84px (40 + 4 + 40). Fallback to menu if tighter.
+                if (constraints.maxWidth < 84) {
+                  return Align(
+                    alignment: Alignment.centerRight,
+                    child: MadDropdownMenuButton(
+                      items: [
+                        MadMenuItem(
+                          label: 'Edit',
+                          icon: LucideIcons.pencil,
+                          onTap: () => _openVendorDialog(vendor: vendor),
+                        ),
+                        MadMenuItem(
+                          label: 'Delete',
+                          icon: LucideIcons.trash2,
+                          destructive: true,
+                          onTap: () => _openDeleteDialog(vendor),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    MadButton(
+                      variant: ButtonVariant.ghost,
+                      size: ButtonSize.icon,
+                      icon: LucideIcons.pencil,
+                      onPressed: () => _openVendorDialog(vendor: vendor),
+                    ),
+                    const SizedBox(width: 4),
+                    MadButton(
+                      variant: ButtonVariant.ghost,
+                      size: ButtonSize.icon,
+                      icon: LucideIcons.trash2,
+                      onPressed: () => _openDeleteDialog(vendor),
+                    ),
+                  ],
+                );
+              },
+            ),
+            width: 100,
+            alignment: Alignment.centerRight,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildEmptyState(bool isDark) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(48),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              LucideIcons.users,
-              size: 64,
-              color: (isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground).withOpacity(0.3),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              _searchQuery.isEmpty ? 'No vendors yet' : 'No vendors found',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _searchQuery.isEmpty
-                  ? 'Add your first vendor to get started'
-                  : 'Try a different search term',
-              style: TextStyle(
-                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-              ),
-            ),
-            if (_searchQuery.isEmpty) ...[
-              const SizedBox(height: 24),
-              MadButton(
-                text: 'Add Vendor',
-                icon: LucideIcons.userPlus,
-                onPressed: () => _showAddVendorDialog(),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _buildTable(bool isDark) {
+    final filtered = _filteredVendors;
 
-  void _showVendorDetails(Vendor vendor) {
-    MadDialog.show(
-      context: context,
-      title: vendor.name,
-      maxWidth: 500,
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
         children: [
-          if (vendor.contactPerson != null)
-            _buildDetailRow('Contact Person', vendor.contactPerson!),
-          if (vendor.phone != null)
-            _buildDetailRow('Phone', vendor.phone!),
-          if (vendor.email != null)
-            _buildDetailRow('Email', vendor.email!),
-          if (vendor.address != null)
-            _buildDetailRow('Address', vendor.address!),
-          if (vendor.gstNo != null)
-            _buildDetailRow('GST Number', vendor.gstNo!),
-          if (vendor.panNo != null)
-            _buildDetailRow('PAN Number', vendor.panNo!),
-          if (vendor.rating != null)
-            _buildDetailRow('Rating', '${vendor.rating!.toStringAsFixed(1)} / 5.0'),
-          if (vendor.type != null && vendor.type!.isNotEmpty)
-            _buildDetailRow('Type', vendor.type!),
-          _buildDetailRow('Status', vendor.status),
-        ],
-      ),
-      actions: [
-        MadButton(
-          text: 'Edit',
-          variant: ButtonVariant.outline,
-          onPressed: () {
-            Navigator.pop(context);
-            _showEditVendorDialog(vendor);
-          },
-        ),
-        MadButton(
-          text: 'Create PO',
-          onPressed: () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, '/purchase-orders');
-          },
-        ),
-      ],
-    );
-  }
-
-  void _showEditVendorDialog(Vendor vendor) {
-    final nameController = TextEditingController(text: vendor.name);
-    final contactController = TextEditingController(text: vendor.contactPerson ?? '');
-    final phoneController = TextEditingController(text: vendor.phone ?? '');
-    final emailController = TextEditingController(text: vendor.email ?? '');
-    final addressController = TextEditingController(text: vendor.address ?? '');
-    final gstController = TextEditingController(text: vendor.gstNo ?? '');
-    final panController = TextEditingController(text: vendor.panNo ?? '');
-    String? selectedStatus = vendor.status;
-    String? selectedType = vendor.type;
-
-    MadFormDialog.show(
-      context: context,
-      title: 'Edit Vendor',
-      maxWidth: 500,
-      content: SingleChildScrollView(
-        child: StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
+          Container(
+            decoration: BoxDecoration(
+              color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withValues(alpha: 0.45),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+            ),
+            child: Row(
               children: [
-                MadInput(
-                  controller: nameController,
-                  labelText: 'Company Name',
-                  hintText: 'Enter vendor company name',
-                ),
-                const SizedBox(height: 16),
-                MadSelect<String>(
-                  labelText: 'Type',
-                  value: selectedType,
-                  placeholder: 'Select type',
-                  options: const [
-                    MadSelectOption(value: 'Vendor', label: 'Vendor'),
-                    MadSelectOption(value: 'Customer', label: 'Customer'),
-                    MadSelectOption(value: 'Service Provider', label: 'Service Provider'),
-                  ],
-                  onChanged: (v) => setDialogState(() => selectedType = v),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: MadInput(
-                        controller: contactController,
-                        labelText: 'Contact Person',
-                        hintText: 'Primary contact name',
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: MadInput(
-                        controller: phoneController,
-                        labelText: 'Phone',
-                        hintText: 'Contact number',
-                        keyboardType: TextInputType.phone,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                MadInput(
-                  controller: emailController,
-                  labelText: 'Email',
-                  hintText: 'vendor@example.com',
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 16),
-                MadTextarea(
-                  controller: addressController,
-                  labelText: 'Address',
-                  hintText: 'Full business address',
-                  minLines: 2,
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: MadInput(
-                        controller: gstController,
-                        labelText: 'GST Number',
-                        hintText: 'GSTIN (optional)',
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: MadInput(
-                        controller: panController,
-                        labelText: 'PAN Number',
-                        hintText: 'PAN (optional)',
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                MadSelect<String>(
-                  labelText: 'Status',
-                  value: selectedStatus,
-                  placeholder: 'Select status',
-                  options: const [
-                    MadSelectOption(value: 'Active', label: 'Active'),
-                    MadSelectOption(value: 'Inactive', label: 'Inactive'),
-                  ],
-                  onChanged: (v) => setDialogState(() => selectedStatus = v),
-                ),
+                _buildHeaderCell('Vendor', width: 300),
+                _buildHeaderCell('Project', width: 130),
+                _buildHeaderCell('Contact', width: 250),
+                _buildHeaderCell('Location', width: 180),
+                _buildHeaderCell('Action', width: 100, alignment: Alignment.centerRight),
               ],
-            );
-          },
-        ),
-      ),
-      actions: [
-        MadButton(
-          text: 'Cancel',
-          variant: ButtonVariant.outline,
-          onPressed: () => Navigator.pop(context),
-        ),
-        MadButton(
-          text: 'Save',
-          onPressed: () async {
-            final data = <String, dynamic>{
-              'name': nameController.text.trim(),
-              'contact_person': contactController.text.trim().isEmpty ? null : contactController.text.trim(),
-              'phone': phoneController.text.trim().isEmpty ? null : phoneController.text.trim(),
-              'email': emailController.text.trim().isEmpty ? null : emailController.text.trim(),
-              'address': addressController.text.trim().isEmpty ? null : addressController.text.trim(),
-              'gst_no': gstController.text.trim().isEmpty ? null : gstController.text.trim(),
-              'pan_no': panController.text.trim().isEmpty ? null : panController.text.trim(),
-              'status': selectedStatus ?? 'Active',
-              'type': selectedType,
-            };
-            Navigator.pop(context);
-            final result = await ApiClient.updateVendor(vendor.id, data);
-            if (!mounted) return;
-            if (result['success'] == true) {
-              _loadVendors();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Vendor updated successfully')),
-              );
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(result['message']?.toString() ?? 'Failed to update vendor')),
-              );
-            }
-          },
-        ),
-      ],
-    );
-  }
-
-  void _showDeleteConfirm(Vendor vendor) {
-    MadDialog.confirm(
-      context: context,
-      title: 'Delete Vendor',
-      description: 'Are you sure you want to delete "${vendor.name}"? This action cannot be undone.',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-      destructive: true,
-    ).then((confirmed) async {
-      if (confirmed != true || !mounted) return;
-      final result = await ApiClient.deleteVendor(vendor.id);
-      if (!mounted) return;
-      if (result['success'] == true) {
-        _loadVendors();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Vendor deleted')),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message']?.toString() ?? 'Failed to delete vendor')),
-        );
-      }
-    });
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-              ),
             ),
           ),
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
+            child: _isLoading
+                ? Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Loading vendors...',
+                          style: TextStyle(
+                            color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : filtered.isEmpty
+                    ? Center(
+                        child: Text(
+                          _error ?? 'No vendors found for current filters.',
+                          style: TextStyle(
+                            color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) => _buildVendorRow(filtered[index], isDark),
+                      ),
           ),
         ],
       ),
     );
   }
 
-  void _showAddVendorDialog() {
-    final nameController = TextEditingController();
-    final contactController = TextEditingController();
-    final phoneController = TextEditingController();
-    final emailController = TextEditingController();
-    final addressController = TextEditingController();
-    final gstController = TextEditingController();
-    final panController = TextEditingController();
-    String? selectedStatus = 'Active';
-    String? selectedType = 'Vendor';
+  Widget _buildDirectoryCard(bool isDark, Responsive responsive, {required bool fillHeight}) {
+    final isMobile = responsive.isMobile;
 
-    MadFormDialog.show(
-      context: context,
-      title: 'Add Vendor',
-      maxWidth: 500,
-      content: SingleChildScrollView(
-        child: StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
+    return MadCard(
+      child: Padding(
+        padding: EdgeInsets.all(isMobile ? 14 : 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Vendor Directory',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Search and filter real vendor records.',
+              style: TextStyle(
+                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
               children: [
-                MadInput(
-                  controller: nameController,
-                  labelText: 'Company Name',
-                  hintText: 'Enter vendor company name',
+                SizedBox(
+                  width: isMobile ? double.infinity : responsive.value(mobile: 320, tablet: 360, desktop: 420),
+                  child: MadSearchInput(
+                    controller: _searchController,
+                    hintText: 'Search by name, company, email, phone or city',
+                    onChanged: (value) {
+                      setState(() => _query = value);
+                    },
+                    onClear: () {
+                      setState(() => _query = '');
+                    },
+                  ),
                 ),
-                const SizedBox(height: 16),
-                MadSelect<String>(
-                  labelText: 'Type',
-                  value: selectedType,
-                  placeholder: 'Select type',
-                  options: const [
-                    MadSelectOption(value: 'Vendor', label: 'Vendor'),
-                    MadSelectOption(value: 'Customer', label: 'Customer'),
-                    MadSelectOption(value: 'Service Provider', label: 'Service Provider'),
-                  ],
-                  onChanged: (v) => setDialogState(() => selectedType = v),
+                SizedBox(
+                  width: isMobile ? double.infinity : 180,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _statusFilter,
+                    isExpanded: true,
+                    decoration: _selectDecoration(isDark),
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('All statuses')),
+                      DropdownMenuItem(value: 'active', child: Text('Active')),
+                      DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
+                      DropdownMenuItem(value: 'blocked', child: Text('Blocked')),
+                    ],
+                    onChanged: (value) => setState(() => _statusFilter = value ?? 'all'),
+                  ),
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: MadInput(
-                        controller: contactController,
-                        labelText: 'Contact Person',
-                        hintText: 'Primary contact name',
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: MadInput(
-                        controller: phoneController,
-                        labelText: 'Phone',
-                        hintText: 'Contact number',
-                        keyboardType: TextInputType.phone,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                MadInput(
-                  controller: emailController,
-                  labelText: 'Email',
-                  hintText: 'vendor@example.com',
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 16),
-                MadTextarea(
-                  controller: addressController,
-                  labelText: 'Address',
-                  hintText: 'Full business address',
-                  minLines: 2,
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: MadInput(
-                        controller: gstController,
-                        labelText: 'GST Number',
-                        hintText: 'GSTIN (optional)',
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: MadInput(
-                        controller: panController,
-                        labelText: 'PAN Number',
-                        hintText: 'PAN (optional)',
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                MadSelect<String>(
-                  labelText: 'Status',
-                  value: selectedStatus,
-                  placeholder: 'Select status',
-                  options: const [
-                    MadSelectOption(value: 'Active', label: 'Active'),
-                    MadSelectOption(value: 'Inactive', label: 'Inactive'),
-                  ],
-                  onChanged: (v) => setDialogState(() => selectedStatus = v),
+                SizedBox(
+                  width: isMobile ? double.infinity : 180,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _projectFilter,
+                    isExpanded: true,
+                    decoration: _selectDecoration(isDark),
+                    items: [
+                      const DropdownMenuItem(value: 'all', child: Text('All projects')),
+                      ..._projectOptions.map((pid) => DropdownMenuItem(value: pid, child: Text('Project $pid'))),
+                    ],
+                    onChanged: (value) => setState(() => _projectFilter = value ?? 'all'),
+                  ),
                 ),
               ],
-            );
-          },
+            ),
+            const SizedBox(height: 14),
+            if (fillHeight)
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: 1000,
+                    child: _buildTable(isDark),
+                  ),
+                ),
+              )
+            else
+              SizedBox(
+                height: responsive.isMobile ? 420 : 500,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: 1000,
+                    child: _buildTable(isDark),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
-      actions: [
-        MadButton(
-          text: 'Cancel',
-          variant: ButtonVariant.outline,
-          onPressed: () => Navigator.pop(context),
-        ),
-        MadButton(
-          text: 'Add Vendor',
-          onPressed: () async {
-            final name = nameController.text.trim();
-            if (name.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Company name is required')),
-              );
-              return;
-            }
-            final data = <String, dynamic>{
-              'name': name,
-              'contact_person': contactController.text.trim().isEmpty ? null : contactController.text.trim(),
-              'phone': phoneController.text.trim().isEmpty ? null : phoneController.text.trim(),
-              'email': emailController.text.trim().isEmpty ? null : emailController.text.trim(),
-              'address': addressController.text.trim().isEmpty ? null : addressController.text.trim(),
-              'gst_no': gstController.text.trim().isEmpty ? null : gstController.text.trim(),
-              'pan_no': panController.text.trim().isEmpty ? null : panController.text.trim(),
-              'status': selectedStatus ?? 'Active',
-              'type': selectedType,
-            };
-            Navigator.pop(context);
-            final result = await ApiClient.createVendor(data);
-            if (!mounted) return;
-            if (result['success'] == true) {
-              _loadVendors();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Vendor added successfully')),
-              );
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(result['message']?.toString() ?? 'Failed to add vendor')),
-              );
-            }
-          },
-        ),
-      ],
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final responsive = Responsive(context);
+
+    return StoreConnector<AppState, _VendorsViewModel>(
+      converter: (store) => _VendorsViewModel(projectId: store.state.project.selectedProjectId),
+      builder: (context, vm) {
+        _selectedProjectId = vm.projectId;
+
+        if (_lastLoadedProjectId != _selectedProjectId) {
+          _lastLoadedProjectId = _selectedProjectId;
+          WidgetsBinding.instance.addPostFrameCallback((_) => _loadVendors());
+        }
+
+        final isCompact = responsive.isMobile || responsive.isTablet;
+        return ProtectedRoute(
+          title: 'Vendors',
+          route: '/vendors',
+          child: isCompact
+              ? SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHero(isDark, responsive.isMobile),
+                      const SizedBox(height: 16),
+                      _buildStatsRow(responsive),
+                      const SizedBox(height: 16),
+                      _buildDirectoryCard(isDark, responsive, fillHeight: false),
+                    ],
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHero(isDark, responsive.isMobile),
+                    const SizedBox(height: 16),
+                    _buildStatsRow(responsive),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: _buildDirectoryCard(isDark, responsive, fillHeight: true),
+                    ),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
+
+class _VendorsViewModel {
+  final String? projectId;
+
+  const _VendorsViewModel({required this.projectId});
 }
