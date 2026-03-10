@@ -52,7 +52,8 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
     });
 
     try {
-      final result = (_selectedProjectId != null && _selectedProjectId!.isNotEmpty)
+      final result =
+          (_selectedProjectId != null && _selectedProjectId!.isNotEmpty)
           ? await ApiClient.getVendorsByProject(_selectedProjectId!)
           : await ApiClient.getVendors();
 
@@ -68,7 +69,8 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
           _isLoading = false;
         });
       } else {
-        final message = result['error']?.toString() ?? 'Could not fetch vendor list.';
+        final message =
+            result['error']?.toString() ?? 'Could not fetch vendor list.';
         setState(() {
           _vendors = [];
           _isLoading = false;
@@ -86,7 +88,12 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
   }
 
   List<String> get _projectOptions {
-    final set = _vendors.map((v) => v.projectId).whereType<String>().where((id) => id.isNotEmpty).toSet().toList();
+    final set = _vendors
+        .map((v) => v.projectId)
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
     set.sort((a, b) {
       final intA = int.tryParse(a);
       final intB = int.tryParse(b);
@@ -107,7 +114,8 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
       final location = (vendor.location ?? '').toLowerCase();
       final status = vendor.status.toLowerCase();
 
-      final matchesSearch = q.isEmpty ||
+      final matchesSearch =
+          q.isEmpty ||
           name.contains(q) ||
           company.contains(q) ||
           email.contains(q) ||
@@ -115,17 +123,25 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
           location.contains(q);
 
       final matchesStatus = _statusFilter == 'all' || status == _statusFilter;
-      final matchesProject = _projectFilter == 'all' || vendor.projectId == _projectFilter;
+      final matchesProject =
+          _projectFilter == 'all' || vendor.projectId == _projectFilter;
 
       return matchesSearch && matchesStatus && matchesProject;
     }).toList();
   }
 
-  int get _activeCount => _vendors.where((v) => v.status.toLowerCase() == 'active').length;
+  int get _activeCount =>
+      _vendors.where((v) => v.status.toLowerCase() == 'active').length;
 
-  int get _blockedCount => _vendors.where((v) => v.status.toLowerCase() == 'blocked').length;
+  int get _blockedCount =>
+      _vendors.where((v) => v.status.toLowerCase() == 'blocked').length;
 
-  int get _projectsCovered => _vendors.map((v) => v.projectId).whereType<String>().where((id) => id.isNotEmpty).toSet().length;
+  int get _projectsCovered => _vendors
+      .map((v) => v.projectId)
+      .whereType<String>()
+      .where((id) => id.isNotEmpty)
+      .toSet()
+      .length;
 
   String _capitalize(String value) {
     if (value.isEmpty) return value;
@@ -138,7 +154,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       filled: true,
-      fillColor: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withValues(alpha: 0.5),
+      fillColor: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withValues(
+        alpha: 0.5,
+      ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: BorderSide.none,
@@ -149,7 +167,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: AppTheme.primaryColor.withValues(alpha: 0.4)),
+        borderSide: BorderSide(
+          color: AppTheme.primaryColor.withValues(alpha: 0.4),
+        ),
       ),
     );
   }
@@ -172,16 +192,36 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
     }
   }
 
+  void _openVendorPriceLists(Vendor vendor, {bool openLatest = false}) {
+    Navigator.pushNamed(
+      context,
+      openLatest ? '/vendors/view-price' : '/vendors/price-lists',
+      arguments: {
+        'vendorId': vendor.id,
+        'projectId': vendor.projectId ?? _selectedProjectId,
+        'openLatest': openLatest,
+      },
+    );
+  }
+
   Future<void> _openVendorDialog({Vendor? vendor}) async {
     final isEditing = vendor != null;
     final nameController = TextEditingController(text: vendor?.name ?? '');
-    final projectController = TextEditingController(text: vendor?.projectId ?? (_selectedProjectId ?? ''));
-    final companyController = TextEditingController(text: vendor?.companyName ?? '');
+    final projectController = TextEditingController(
+      text: vendor?.projectId ?? (_selectedProjectId ?? ''),
+    );
+    final companyController = TextEditingController(
+      text: vendor?.companyName ?? '',
+    );
     final emailController = TextEditingController(text: vendor?.email ?? '');
     final mobileController = TextEditingController(text: vendor?.phone ?? '');
-    final locationController = TextEditingController(text: vendor?.location ?? '');
+    final locationController = TextEditingController(
+      text: vendor?.location ?? '',
+    );
 
-    String selectedStatus = (vendor?.status.isNotEmpty == true) ? vendor!.status.toLowerCase() : 'active';
+    String selectedStatus = (vendor?.status.isNotEmpty == true)
+        ? vendor!.status.toLowerCase()
+        : 'active';
     bool submitting = false;
 
     await showDialog<void>(
@@ -192,8 +232,13 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return Dialog(
-              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 24,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 760),
                 child: Padding(
@@ -204,13 +249,18 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                     children: [
                       Text(
                         isEditing ? 'Edit Vendor' : 'Create Vendor',
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         'Update vendor details and status.',
                         style: TextStyle(
-                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                          color: isDark
+                              ? AppTheme.darkMutedForeground
+                              : AppTheme.lightMutedForeground,
                         ),
                       ),
                       const SizedBox(height: 18),
@@ -239,12 +289,18 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                                     child: DropdownButtonFormField<String>(
                                       initialValue: selectedStatus,
                                       isExpanded: true,
-                                      decoration: _selectDecoration(isDark, labelText: 'Status'),
+                                      decoration: _selectDecoration(
+                                        isDark,
+                                        labelText: 'Status',
+                                      ),
                                       items: _statusOptions
-                                          .map((status) => DropdownMenuItem<String>(
-                                                value: status,
-                                                child: Text(status),
-                                              ))
+                                          .map(
+                                            (status) =>
+                                                DropdownMenuItem<String>(
+                                                  value: status,
+                                                  child: Text(status),
+                                                ),
+                                          )
                                           .toList(),
                                       onChanged: (value) {
                                         setDialogState(() {
@@ -315,21 +371,29 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                           MadButton(
                             text: submitting
                                 ? (isEditing ? 'Saving...' : 'Creating...')
-                                : (isEditing ? 'Save Changes' : 'Create Vendor'),
+                                : (isEditing
+                                      ? 'Save Changes'
+                                      : 'Create Vendor'),
                             loading: submitting,
                             disabled: submitting,
                             onPressed: () async {
                               final vendorName = nameController.text.trim();
                               if (vendorName.isEmpty) {
-                                _showSnack('Vendor name required', destructive: true);
+                                _showSnack(
+                                  'Vendor name required',
+                                  destructive: true,
+                                );
                                 return;
                               }
 
                               final projectText = projectController.text.trim();
                               final payload = <String, dynamic>{
-                                'project_id': projectText.isEmpty ? null : int.tryParse(projectText),
+                                'project_id': projectText.isEmpty
+                                    ? null
+                                    : int.tryParse(projectText),
                                 'vendor_name': vendorName,
-                                'vendor_company_name': companyController.text.trim(),
+                                'vendor_company_name': companyController.text
+                                    .trim(),
                                 'vendor_email': emailController.text.trim(),
                                 'mobile_number': mobileController.text.trim(),
                                 'location': locationController.text.trim(),
@@ -341,24 +405,41 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                               try {
                                 Map<String, dynamic> result;
                                 if (isEditing) {
-                                  final originalProject = int.tryParse(vendor.projectId ?? '');
-                                  final nextProject = payload['project_id'] as int?;
+                                  final originalProject = int.tryParse(
+                                    vendor.projectId ?? '',
+                                  );
+                                  final nextProject =
+                                      payload['project_id'] as int?;
                                   final otherFieldsChanged =
                                       (vendor.name != payload['vendor_name']) ||
-                                      ((vendor.companyName ?? '') != payload['vendor_company_name']) ||
-                                      ((vendor.email ?? '') != payload['vendor_email']) ||
-                                      ((vendor.phone ?? '') != payload['mobile_number']) ||
-                                      ((vendor.location ?? '') != payload['location']) ||
+                                      ((vendor.companyName ?? '') !=
+                                          payload['vendor_company_name']) ||
+                                      ((vendor.email ?? '') !=
+                                          payload['vendor_email']) ||
+                                      ((vendor.phone ?? '') !=
+                                          payload['mobile_number']) ||
+                                      ((vendor.location ?? '') !=
+                                          payload['location']) ||
                                       (originalProject != nextProject);
-                                  final statusChanged = vendor.status.toLowerCase() != selectedStatus;
+                                  final statusChanged =
+                                      vendor.status.toLowerCase() !=
+                                      selectedStatus;
 
                                   if (statusChanged && !otherFieldsChanged) {
-                                    result = await ApiClient.updateVendorStatus(vendor.id, selectedStatus);
+                                    result = await ApiClient.updateVendorStatus(
+                                      vendor.id,
+                                      selectedStatus,
+                                    );
                                   } else {
-                                    result = await ApiClient.updateVendor(vendor.id, payload);
+                                    result = await ApiClient.updateVendor(
+                                      vendor.id,
+                                      payload,
+                                    );
                                   }
                                 } else {
-                                  result = await ApiClient.createVendor(payload);
+                                  result = await ApiClient.createVendor(
+                                    payload,
+                                  );
                                 }
 
                                 if (!mounted) return;
@@ -367,11 +448,18 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                                   if (dialogContext.mounted) {
                                     Navigator.of(dialogContext).pop();
                                   }
-                                  _showSnack(isEditing ? 'Vendor updated' : 'Vendor created');
+                                  _showSnack(
+                                    isEditing
+                                        ? 'Vendor updated'
+                                        : 'Vendor created',
+                                  );
                                   await _loadVendors();
                                 } else {
                                   _showSnack(
-                                    (result['error'] ?? (isEditing ? 'Failed to update vendor' : 'Failed to create vendor'))
+                                    (result['error'] ??
+                                            (isEditing
+                                                ? 'Failed to update vendor'
+                                                : 'Failed to create vendor'))
                                         .toString(),
                                     destructive: true,
                                   );
@@ -380,7 +468,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                               } catch (_) {
                                 if (!mounted) return;
                                 _showSnack(
-                                  isEditing ? 'Something went wrong while saving vendor.' : 'Something went wrong while creating vendor.',
+                                  isEditing
+                                      ? 'Something went wrong while saving vendor.'
+                                      : 'Something went wrong while creating vendor.',
                                   destructive: true,
                                 );
                                 setDialogState(() => submitting = false);
@@ -398,7 +488,6 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
         );
       },
     );
-
   }
 
   Future<void> _openDeleteDialog(Vendor vendor) async {
@@ -411,7 +500,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
           builder: (context, setDialogState) {
             return Dialog(
               insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 480),
                 child: Padding(
@@ -420,7 +511,13 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Delete Vendor', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                      const Text(
+                        'Delete Vendor',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       const SizedBox(height: 10),
                       Text(
                         'This will permanently delete ${vendor.name.isEmpty ? 'this vendor' : vendor.name}. This action cannot be undone.',
@@ -444,7 +541,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                             onPressed: () async {
                               setDialogState(() => deleting = true);
                               try {
-                                final result = await ApiClient.deleteVendor(vendor.id);
+                                final result = await ApiClient.deleteVendor(
+                                  vendor.id,
+                                );
                                 if (!mounted) return;
 
                                 if (result['success'] == true) {
@@ -455,14 +554,19 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                                   await _loadVendors();
                                 } else {
                                   _showSnack(
-                                    (result['error'] ?? 'Could not delete vendor.').toString(),
+                                    (result['error'] ??
+                                            'Could not delete vendor.')
+                                        .toString(),
                                     destructive: true,
                                   );
                                   setDialogState(() => deleting = false);
                                 }
                               } catch (_) {
                                 if (!mounted) return;
-                                _showSnack('Something went wrong while deleting vendor.', destructive: true);
+                                _showSnack(
+                                  'Something went wrong while deleting vendor.',
+                                  destructive: true,
+                                );
                                 setDialogState(() => deleting = false);
                               }
                             },
@@ -515,7 +619,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                         fontSize: isMobile ? 28 : 32,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.5,
-                        color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
+                        color: isDark
+                            ? AppTheme.darkForeground
+                            : AppTheme.lightForeground,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -523,7 +629,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                       'Manage project vendors in one place.',
                       style: TextStyle(
                         fontSize: 13,
-                        color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                        color: isDark
+                            ? AppTheme.darkMutedForeground
+                            : AppTheme.lightMutedForeground,
                       ),
                     ),
                   ],
@@ -566,20 +674,18 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: const TextStyle(fontSize: 13),
-              ),
+              Text(title, style: const TextStyle(fontSize: 13)),
               const SizedBox(height: 8),
               Text(
                 value,
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, height: 1.0),
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  height: 1.0,
+                ),
               ),
               const SizedBox(height: 8),
-              Text(
-                subtitle,
-                style: const TextStyle(fontSize: 12),
-              ),
+              Text(subtitle, style: const TextStyle(fontSize: 12)),
             ],
           ),
         ),
@@ -602,7 +708,8 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
           columns = 4;
         }
 
-        final tileWidth = (availableWidth - (spacing * (columns - 1))) / columns;
+        final tileWidth =
+            (availableWidth - (spacing * (columns - 1))) / columns;
 
         return Wrap(
           spacing: spacing,
@@ -686,7 +793,11 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
     );
   }
 
-  Widget _buildHeaderCell(String text, {double? width, Alignment alignment = Alignment.centerLeft}) {
+  Widget _buildHeaderCell(
+    String text, {
+    double? width,
+    Alignment alignment = Alignment.centerLeft,
+  }) {
     return Container(
       alignment: alignment,
       width: width,
@@ -698,7 +809,11 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
     );
   }
 
-  Widget _buildBodyCell(Widget child, {double? width, Alignment alignment = Alignment.centerLeft}) {
+  Widget _buildBodyCell(
+    Widget child, {
+    double? width,
+    Alignment alignment = Alignment.centerLeft,
+  }) {
     return Container(
       alignment: alignment,
       width: width,
@@ -729,14 +844,22 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                     children: [
                       Text(
                         vendor.name.isEmpty ? '-' : vendor.name,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        (vendor.companyName == null || vendor.companyName!.isEmpty) ? '-' : vendor.companyName!,
+                        (vendor.companyName == null ||
+                                vendor.companyName!.isEmpty)
+                            ? '-'
+                            : vendor.companyName!,
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                          color: isDark
+                              ? AppTheme.darkMutedForeground
+                              : AppTheme.lightMutedForeground,
                         ),
                       ),
                     ],
@@ -749,7 +872,11 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
             width: 300,
           ),
           _buildBodyCell(
-            Text(vendor.projectId?.isNotEmpty == true ? 'Project ${vendor.projectId}' : '-'),
+            Text(
+              vendor.projectId?.isNotEmpty == true
+                  ? 'Project ${vendor.projectId}'
+                  : '-',
+            ),
             width: 130,
           ),
           _buildBodyCell(
@@ -761,7 +888,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                     Icon(
                       LucideIcons.mail,
                       size: 12,
-                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                      color: isDark
+                          ? AppTheme.darkMutedForeground
+                          : AppTheme.lightMutedForeground,
                     ),
                     const SizedBox(width: 6),
                     Expanded(
@@ -770,7 +899,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                          color: isDark
+                              ? AppTheme.darkMutedForeground
+                              : AppTheme.lightMutedForeground,
                         ),
                       ),
                     ),
@@ -782,7 +913,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                     Icon(
                       LucideIcons.phone,
                       size: 12,
-                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                      color: isDark
+                          ? AppTheme.darkMutedForeground
+                          : AppTheme.lightMutedForeground,
                     ),
                     const SizedBox(width: 6),
                     Expanded(
@@ -791,7 +924,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                          color: isDark
+                              ? AppTheme.darkMutedForeground
+                              : AppTheme.lightMutedForeground,
                         ),
                       ),
                     ),
@@ -807,16 +942,22 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                 Icon(
                   LucideIcons.mapPin,
                   size: 14,
-                  color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                  color: isDark
+                      ? AppTheme.darkMutedForeground
+                      : AppTheme.lightMutedForeground,
                 ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    vendor.location?.isNotEmpty == true ? vendor.location! : '-',
+                    vendor.location?.isNotEmpty == true
+                        ? vendor.location!
+                        : '-',
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                      color: isDark
+                          ? AppTheme.darkMutedForeground
+                          : AppTheme.lightMutedForeground,
                     ),
                   ),
                 ),
@@ -827,12 +968,23 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
           _buildBodyCell(
             LayoutBuilder(
               builder: (context, constraints) {
-                // Two icon buttons need ~84px (40 + 4 + 40). Fallback to menu if tighter.
-                if (constraints.maxWidth < 84) {
+                // Four icon buttons need ~160px. Fallback to menu if tighter.
+                if (constraints.maxWidth < 160) {
                   return Align(
                     alignment: Alignment.centerRight,
                     child: MadDropdownMenuButton(
                       items: [
+                        MadMenuItem(
+                          label: 'Price Lists',
+                          icon: LucideIcons.fileText,
+                          onTap: () => _openVendorPriceLists(vendor),
+                        ),
+                        MadMenuItem(
+                          label: 'View Latest',
+                          icon: LucideIcons.eye,
+                          onTap: () =>
+                              _openVendorPriceLists(vendor, openLatest: true),
+                        ),
                         MadMenuItem(
                           label: 'Edit',
                           icon: LucideIcons.pencil,
@@ -856,6 +1008,19 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                     MadButton(
                       variant: ButtonVariant.ghost,
                       size: ButtonSize.icon,
+                      icon: LucideIcons.fileText,
+                      onPressed: () => _openVendorPriceLists(vendor),
+                    ),
+                    MadButton(
+                      variant: ButtonVariant.ghost,
+                      size: ButtonSize.icon,
+                      icon: LucideIcons.eye,
+                      onPressed: () =>
+                          _openVendorPriceLists(vendor, openLatest: true),
+                    ),
+                    MadButton(
+                      variant: ButtonVariant.ghost,
+                      size: ButtonSize.icon,
                       icon: LucideIcons.pencil,
                       onPressed: () => _openVendorDialog(vendor: vendor),
                     ),
@@ -870,7 +1035,7 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                 );
               },
             ),
-            width: 100,
+            width: 180,
             alignment: Alignment.centerRight,
           ),
         ],
@@ -883,15 +1048,20 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
 
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
+        border: Border.all(
+          color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
+        ),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         children: [
           Container(
             decoration: BoxDecoration(
-              color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withValues(alpha: 0.45),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+              color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted)
+                  .withValues(alpha: 0.45),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(11),
+              ),
             ),
             child: Row(
               children: [
@@ -899,7 +1069,11 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                 _buildHeaderCell('Project', width: 130),
                 _buildHeaderCell('Contact', width: 250),
                 _buildHeaderCell('Location', width: 180),
-                _buildHeaderCell('Action', width: 100, alignment: Alignment.centerRight),
+                _buildHeaderCell(
+                  'Action',
+                  width: 180,
+                  alignment: Alignment.centerRight,
+                ),
               ],
             ),
           ),
@@ -914,39 +1088,50 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                           height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                            color: isDark
+                                ? AppTheme.darkMutedForeground
+                                : AppTheme.lightMutedForeground,
                           ),
                         ),
                         const SizedBox(width: 10),
                         Text(
                           'Loading vendors...',
                           style: TextStyle(
-                            color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                            color: isDark
+                                ? AppTheme.darkMutedForeground
+                                : AppTheme.lightMutedForeground,
                           ),
                         ),
                       ],
                     ),
                   )
                 : filtered.isEmpty
-                    ? Center(
-                        child: Text(
-                          _error ?? 'No vendors found for current filters.',
-                          style: TextStyle(
-                            color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                          ),
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) => _buildVendorRow(filtered[index], isDark),
+                ? Center(
+                    child: Text(
+                      _error ?? 'No vendors found for current filters.',
+                      style: TextStyle(
+                        color: isDark
+                            ? AppTheme.darkMutedForeground
+                            : AppTheme.lightMutedForeground,
                       ),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) =>
+                        _buildVendorRow(filtered[index], isDark),
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDirectoryCard(bool isDark, Responsive responsive, {required bool fillHeight}) {
+  Widget _buildDirectoryCard(
+    bool isDark,
+    Responsive responsive, {
+    required bool fillHeight,
+  }) {
     final isMobile = responsive.isMobile;
 
     return MadCard(
@@ -963,7 +1148,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
             Text(
               'Search and filter real vendor records.',
               style: TextStyle(
-                color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                color: isDark
+                    ? AppTheme.darkMutedForeground
+                    : AppTheme.lightMutedForeground,
               ),
             ),
             const SizedBox(height: 14),
@@ -972,7 +1159,13 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
               runSpacing: 10,
               children: [
                 SizedBox(
-                  width: isMobile ? double.infinity : responsive.value(mobile: 320, tablet: 360, desktop: 420),
+                  width: isMobile
+                      ? double.infinity
+                      : responsive.value(
+                          mobile: 320,
+                          tablet: 360,
+                          desktop: 420,
+                        ),
                   child: MadSearchInput(
                     controller: _searchController,
                     hintText: 'Search by name, company, email, phone or city',
@@ -991,12 +1184,22 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                     isExpanded: true,
                     decoration: _selectDecoration(isDark),
                     items: const [
-                      DropdownMenuItem(value: 'all', child: Text('All statuses')),
+                      DropdownMenuItem(
+                        value: 'all',
+                        child: Text('All statuses'),
+                      ),
                       DropdownMenuItem(value: 'active', child: Text('Active')),
-                      DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
-                      DropdownMenuItem(value: 'blocked', child: Text('Blocked')),
+                      DropdownMenuItem(
+                        value: 'inactive',
+                        child: Text('Inactive'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'blocked',
+                        child: Text('Blocked'),
+                      ),
                     ],
-                    onChanged: (value) => setState(() => _statusFilter = value ?? 'all'),
+                    onChanged: (value) =>
+                        setState(() => _statusFilter = value ?? 'all'),
                   ),
                 ),
                 SizedBox(
@@ -1006,10 +1209,19 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                     isExpanded: true,
                     decoration: _selectDecoration(isDark),
                     items: [
-                      const DropdownMenuItem(value: 'all', child: Text('All projects')),
-                      ..._projectOptions.map((pid) => DropdownMenuItem(value: pid, child: Text('Project $pid'))),
+                      const DropdownMenuItem(
+                        value: 'all',
+                        child: Text('All projects'),
+                      ),
+                      ..._projectOptions.map(
+                        (pid) => DropdownMenuItem(
+                          value: pid,
+                          child: Text('Project $pid'),
+                        ),
+                      ),
                     ],
-                    onChanged: (value) => setState(() => _projectFilter = value ?? 'all'),
+                    onChanged: (value) =>
+                        setState(() => _projectFilter = value ?? 'all'),
                   ),
                 ),
               ],
@@ -1019,10 +1231,7 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
               Expanded(
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: 1000,
-                    child: _buildTable(isDark),
-                  ),
+                  child: SizedBox(width: 1080, child: _buildTable(isDark)),
                 ),
               )
             else
@@ -1030,10 +1239,7 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                 height: responsive.isMobile ? 420 : 500,
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: 1000,
-                    child: _buildTable(isDark),
-                  ),
+                  child: SizedBox(width: 1080, child: _buildTable(isDark)),
                 ),
               ),
           ],
@@ -1048,7 +1254,8 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
     final responsive = Responsive(context);
 
     return StoreConnector<AppState, _VendorsViewModel>(
-      converter: (store) => _VendorsViewModel(projectId: store.state.project.selectedProjectId),
+      converter: (store) =>
+          _VendorsViewModel(projectId: store.state.project.selectedProjectId),
       builder: (context, vm) {
         _selectedProjectId = vm.projectId;
 
@@ -1070,7 +1277,11 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                       const SizedBox(height: 16),
                       _buildStatsRow(responsive),
                       const SizedBox(height: 16),
-                      _buildDirectoryCard(isDark, responsive, fillHeight: false),
+                      _buildDirectoryCard(
+                        isDark,
+                        responsive,
+                        fillHeight: false,
+                      ),
                     ],
                   ),
                 )
@@ -1082,7 +1293,11 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                     _buildStatsRow(responsive),
                     const SizedBox(height: 16),
                     Expanded(
-                      child: _buildDirectoryCard(isDark, responsive, fillHeight: true),
+                      child: _buildDirectoryCard(
+                        isDark,
+                        responsive,
+                        fillHeight: true,
+                      ),
                     ),
                   ],
                 ),

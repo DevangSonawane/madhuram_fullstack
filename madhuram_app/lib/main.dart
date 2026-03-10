@@ -45,6 +45,9 @@ import 'pages/vendor_comparison_page.dart';
 import 'pages/purchase_orders_page_full.dart';
 import 'pages/vendors_page_full.dart';
 import 'pages/vendor_create_page.dart';
+import 'pages/vendor_price_lists_page.dart';
+import 'pages/vendor_price_list_create_page.dart';
+import 'pages/vendor_price_list_view_page.dart';
 import 'pages/samples_page.dart';
 import 'pages/sample_create_page.dart';
 import 'pages/sample_preview_page.dart';
@@ -92,6 +95,7 @@ final Map<String, Widget Function(BuildContext)> _appRoutes = {
   '/stock-areas': (context) => const StockAreasPage(),
   '/materials': (context) => const MaterialsPage(),
   '/inventory/add': (context) => const AddInventoryPage(),
+  '/inventory': (context) => const AddInventoryPage(),
   '/projects/inventory/add': (context) => const AddInventoryPage(),
   '/stock-transfers': (context) => const StockTransfersPage(),
   '/consumption': (context) => const ConsumptionPage(),
@@ -100,6 +104,11 @@ final Map<String, Widget Function(BuildContext)> _appRoutes = {
   '/reports': (context) => const ReportsPageFull(),
   '/audit-logs': (context) => const AuditLogsPageFull(),
   '/profile': (context) => const ProfilePage(),
+  '/users': (context) => const ProfilePage(),
+  '/settings': (context) => const ProfilePage(),
+  '/purchase-orders/preview': (context) => const PurchaseOrdersPageFull(),
+  '/mir/preview': (context) => const MIRPageFull(),
+  '/itr/preview': (context) => const ITRPageFull(),
 };
 
 void main() async {
@@ -274,6 +283,83 @@ class MyApp extends StatelessWidget {
                   settings: settings,
                   pageBuilder: (context, animation, secondaryAnimation) =>
                       SampleCreatePage(initialProjectId: projectId),
+                  transitionsBuilder:
+                      (context, animation, secondaryAnimation, child) {
+                        return FadeTransition(opacity: animation, child: child);
+                      },
+                  transitionDuration: AppAnimations.normal,
+                );
+              }
+              if (settings.name == '/vendors/price-lists') {
+                final args = settings.arguments as Map<String, dynamic>? ?? {};
+                final vendorId = (args['vendorId'] ?? '').toString();
+                final projectId = args['projectId']?.toString();
+                final openLatest = args['openLatest'] == true;
+                return PageRouteBuilder<void>(
+                  settings: settings,
+                  pageBuilder: (context, animation, secondaryAnimation) =>
+                      VendorPriceListsPage(
+                        vendorId: vendorId,
+                        projectId: projectId,
+                        openLatestOnLoad: openLatest,
+                      ),
+                  transitionsBuilder:
+                      (context, animation, secondaryAnimation, child) {
+                        return FadeTransition(opacity: animation, child: child);
+                      },
+                  transitionDuration: AppAnimations.normal,
+                );
+              }
+              if (settings.name == '/vendors/price-lists/create') {
+                final args = settings.arguments as Map<String, dynamic>? ?? {};
+                final vendorId = (args['vendorId'] ?? '').toString();
+                final projectId = args['projectId']?.toString();
+                return PageRouteBuilder<void>(
+                  settings: settings,
+                  pageBuilder: (context, animation, secondaryAnimation) =>
+                      VendorPriceListCreatePage(
+                        vendorId: vendorId,
+                        projectId: projectId,
+                      ),
+                  transitionsBuilder:
+                      (context, animation, secondaryAnimation, child) {
+                        return FadeTransition(opacity: animation, child: child);
+                      },
+                  transitionDuration: AppAnimations.normal,
+                );
+              }
+              if (settings.name == '/vendors/price-lists/view') {
+                final args = settings.arguments as Map<String, dynamic>? ?? {};
+                final vendorId = (args['vendorId'] ?? '').toString();
+                final priceListId = (args['priceListId'] ?? '').toString();
+                final projectId = args['projectId']?.toString();
+                return PageRouteBuilder<void>(
+                  settings: settings,
+                  pageBuilder: (context, animation, secondaryAnimation) =>
+                      VendorPriceListViewPage(
+                        vendorId: vendorId,
+                        priceListId: priceListId,
+                        projectId: projectId,
+                      ),
+                  transitionsBuilder:
+                      (context, animation, secondaryAnimation, child) {
+                        return FadeTransition(opacity: animation, child: child);
+                      },
+                  transitionDuration: AppAnimations.normal,
+                );
+              }
+              if (settings.name == '/vendors/view-price') {
+                final args = settings.arguments as Map<String, dynamic>? ?? {};
+                final vendorId = (args['vendorId'] ?? '').toString();
+                final projectId = args['projectId']?.toString();
+                return PageRouteBuilder<void>(
+                  settings: settings,
+                  pageBuilder: (context, animation, secondaryAnimation) =>
+                      VendorPriceListsPage(
+                        vendorId: vendorId,
+                        projectId: projectId,
+                        openLatestOnLoad: true,
+                      ),
                   transitionsBuilder:
                       (context, animation, secondaryAnimation, child) {
                         return FadeTransition(opacity: animation, child: child);

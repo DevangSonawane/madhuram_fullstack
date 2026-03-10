@@ -998,6 +998,13 @@ class ApiClient {
     return _handleResponse(res);
   }
 
+  static Future<Map<String, dynamic>> getVendorById(String vendorId) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/vendors/$vendorId');
+    final res = await _get(uri, headers: _authHeaders(token));
+    return _handleResponse(res);
+  }
+
   static Future<Map<String, dynamic>> createVendor(
     Map<String, dynamic> data,
   ) async {
@@ -1043,6 +1050,88 @@ class ApiClient {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/vendors/$vendorId');
     final res = await _delete(uri, headers: _authHeaders(token));
+    return _handleResponse(res);
+  }
+
+  // ============================================================================
+  // Vendor Price Lists
+  // ============================================================================
+  static Future<Map<String, dynamic>> uploadVendorPriceListFile(
+    File file,
+  ) async {
+    return _multipartRequest(
+      'POST',
+      '/api/vendor-price-list/upload',
+      {},
+      files: {'file': file},
+    );
+  }
+
+  static Future<Map<String, dynamic>> getVendorPriceLists(
+    String vendorId,
+  ) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/vendor-price-list/vendor/$vendorId');
+    final res = await _get(uri, headers: _authHeaders(token));
+    return _handleResponse(res);
+  }
+
+  static Future<Map<String, dynamic>> getVendorPriceListById(
+    String priceListId,
+  ) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/vendor-price-list/$priceListId');
+    final res = await _get(uri, headers: _authHeaders(token));
+    return _handleResponse(res);
+  }
+
+  static Future<Map<String, dynamic>> createVendorPriceList(
+    Map<String, dynamic> data,
+  ) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/vendor-price-list');
+    final res = await _post(
+      uri,
+      headers: _authHeaders(token),
+      body: jsonEncode(data),
+    );
+    return _handleResponse(res);
+  }
+
+  static Future<Map<String, dynamic>> updateVendorPriceList(
+    String priceListId,
+    Map<String, dynamic> data,
+  ) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/vendor-price-list/$priceListId');
+    final res = await _put(
+      uri,
+      headers: _authHeaders(token),
+      body: jsonEncode(data),
+    );
+    return _handleResponse(res);
+  }
+
+  static Future<Map<String, dynamic>> deleteVendorPriceList(
+    String priceListId,
+  ) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/vendor-price-list/$priceListId');
+    final res = await _delete(uri, headers: _authHeaders(token));
+    return _handleResponse(res);
+  }
+
+  static Future<Map<String, dynamic>> updateVendorPriceListStatus(
+    String priceListId,
+    String status,
+  ) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/vendor-price-list/$priceListId/status');
+    final res = await _patch(
+      uri,
+      headers: _authHeaders(token),
+      body: jsonEncode({'status': status}),
+    );
     return _handleResponse(res);
   }
 
@@ -1567,4 +1656,94 @@ class ApiClient {
     final res = await _put(uri, headers: _authHeaders(token));
     return _handleResponse(res);
   }
+
+  // ============================================================================
+  // React API name compatibility aliases
+  // ============================================================================
+  static Future<Map<String, dynamic>> getProjectById(String id) =>
+      getProject(id);
+
+  static Future<Map<String, dynamic>> getBOQById(String id) => getBOQ(id);
+
+  static Future<Map<String, dynamic>> getBOQs() => getAllBOQs();
+
+  static Future<Map<String, dynamic>> getPosByProject(String projectId) =>
+      getPOsByProject(projectId);
+
+  static Future<Map<String, dynamic>> getPoById(String id) => getPO(id);
+
+  static Future<Map<String, dynamic>> createPo(Map<String, dynamic> data) =>
+      createPO(data);
+
+  static Future<Map<String, dynamic>> updatePo(
+    String id,
+    Map<String, dynamic> data,
+  ) => updatePO(id, data);
+
+  static Future<Map<String, dynamic>> deletePo(String id) => deletePO(id);
+
+  static Future<Map<String, dynamic>> uploadPoFile(File file) =>
+      uploadPOFile(file);
+
+  static Future<Map<String, dynamic>> parsePoFile(File file) =>
+      parsePOFile(file);
+
+  static Future<Map<String, dynamic>> getMirsByProject(String projectId) =>
+      getMIRsByProject(projectId);
+
+  static Future<Map<String, dynamic>> getMirs() => getAllMIRs();
+
+  static Future<Map<String, dynamic>> getMirById(String id) => getMIR(id);
+
+  static Future<Map<String, dynamic>> createMir(Map<String, dynamic> data) =>
+      createMIR(data);
+
+  static Future<Map<String, dynamic>> updateMir(
+    String id,
+    Map<String, dynamic> data,
+  ) => updateMIR(id, data);
+
+  static Future<Map<String, dynamic>> deleteMir(String id) => deleteMIR(id);
+
+  static Future<Map<String, dynamic>> uploadMirReference(File file) =>
+      uploadMIRFile(file);
+
+  static Future<Map<String, dynamic>> getItrsByProject(String projectId) =>
+      getITRsByProject(projectId);
+
+  static Future<Map<String, dynamic>> getItrs() => getAllITRs();
+
+  static Future<Map<String, dynamic>> getItrById(String id) => getITR(id);
+
+  static Future<Map<String, dynamic>> createItr(Map<String, dynamic> data) =>
+      createITR(data);
+
+  static Future<Map<String, dynamic>> updateItr(
+    String id,
+    Map<String, dynamic> data,
+  ) => updateITR(id, data);
+
+  static Future<Map<String, dynamic>> deleteItr(String id) => deleteITR(id);
+
+  static Future<Map<String, dynamic>> getDcsByProject(String projectId) =>
+      getChallansByProject(projectId);
+
+  static Future<Map<String, dynamic>> getDcsByPo(String poId) =>
+      getChallansByPO(poId);
+
+  static Future<Map<String, dynamic>> getDcById(String id) =>
+      getChallanById(id);
+
+  static Future<Map<String, dynamic>> createDc(Map<String, dynamic> data) =>
+      createChallan(data);
+
+  static Future<Map<String, dynamic>> updateDc(
+    String id,
+    Map<String, dynamic> data,
+  ) => updateChallan(id, data);
+
+  static Future<Map<String, dynamic>> deleteDc(String id) => deleteChallan(id);
+
+  static Future<Map<String, dynamic>> uploadDcFile(File file) =>
+      uploadChallanFile(file);
 }

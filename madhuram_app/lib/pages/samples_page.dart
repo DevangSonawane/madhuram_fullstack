@@ -389,29 +389,10 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
     }
   }
 
-  Future<void> _attachSampleFile(Map<String, dynamic> sample, String path) async {
-    final id = sample['sample_id'] ?? sample['id'];
-    if (id == null) return;
-    final res = await ApiClient.updateSample(id.toString(), {'sample_file': path});
-    if (!mounted) return;
-    if (res['success'] == true) {
-      showToast(context, 'File attached');
-      _loadServerSamples();
-    } else {
-      showToast(context, res['error']?.toString() ?? 'Attach failed', variant: ToastVariant.error);
-    }
-  }
-
   void _navigateToPreview(Map<String, dynamic> sample) {
     final id = sample['sample_id'] ?? sample['id'];
     if (id == null) return;
     Navigator.pushNamed(context, '/samples/preview', arguments: id.toString());
-  }
-
-  void _navigateToEdit(Map<String, dynamic> sample) {
-    final id = sample['sample_id'] ?? sample['id'];
-    if (id == null) return;
-    Navigator.pushNamed(context, '/samples/edit', arguments: id.toString());
   }
 
   void _openItemFieldDialog(int rowIndex) {
@@ -754,7 +735,6 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
   }
 
   Widget _buildServerSamplesSection(bool isDark, bool isMobile) {
-    final canShowUpload = _uploadFilePaths.isNotEmpty;
     final visibleSamples = _filteredServerSamples;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -863,7 +843,7 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
                               itemBuilder: (context, index) {
                                 final sample = visibleSamples[index];
                                 final items = sample['item_description'] as List? ?? [];
-                                final status = (sample['status'] ?? sample['workflow_status'] ?? 'Draft').toString();
+                                final sampleId = (sample['sample_id'] ?? sample['id'] ?? '-').toString();
                                 return Container(
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
@@ -878,13 +858,10 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
                                                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
                                               ),
                                             ),
-                                            MadBadge(
-                                              text: status,
-                                              variant: status == 'Submitted' ? BadgeVariant.default_ : BadgeVariant.outline,
-                                            ),
                                           ],
                                         ),
                                         const SizedBox(height: 10),
+                                        Text('ID: $sampleId', style: TextStyle(fontSize: 12, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
                                         Text('Site: ${(sample['site_name'] ?? '-').toString()}', style: TextStyle(fontSize: 12, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
                                         Text('Work: ${(sample['work_done'] ?? '-').toString()}', style: TextStyle(fontSize: 12, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
                                         Text('Items: ${items.length}', style: TextStyle(fontSize: 12, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
@@ -894,15 +871,6 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
                                           runSpacing: 8,
                                           children: [
                                             MadButton(text: 'Preview', icon: LucideIcons.fileText, size: ButtonSize.sm, variant: ButtonVariant.outline, onPressed: () => _navigateToPreview(sample)),
-                                            MadButton(text: 'Edit', icon: LucideIcons.pencil, size: ButtonSize.sm, variant: ButtonVariant.outline, onPressed: () => _navigateToEdit(sample)),
-                                            if (canShowUpload)
-                                              MadButton(
-                                                text: 'Attach',
-                                                icon: LucideIcons.paperclip,
-                                                size: ButtonSize.sm,
-                                                variant: ButtonVariant.outline,
-                                                onPressed: () => _showAttachDialog(sample),
-                                              ),
                                             MadButton(
                                               text: 'Delete',
                                               icon: LucideIcons.trash2,
@@ -928,11 +896,10 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
                               ),
                               child: Row(
                                 children: [
+                                  _buildHeaderCell('ID', flex: 1, isDark: isDark),
                                   _buildHeaderCell('Building', flex: 2, isDark: isDark),
-                                  if (!isMobile) _buildHeaderCell('Site', flex: 2, isDark: isDark),
+                                  _buildHeaderCell('Site', flex: 2, isDark: isDark),
                                   _buildHeaderCell('Work', flex: 2, isDark: isDark),
-                                  if (!isMobile) _buildHeaderCell('Items', flex: 1, isDark: isDark),
-                                  _buildHeaderCell('Status', flex: 1, isDark: isDark),
                                   const SizedBox(width: 56),
                                 ],
                               ),
@@ -947,12 +914,19 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
                               ),
                               itemBuilder: (context, index) {
                                 final sample = visibleSamples[index];
-                                final items = sample['item_description'] as List? ?? [];
-                                final status = (sample['status'] ?? sample['workflow_status'] ?? 'Draft').toString();
+                                final sampleId = (sample['sample_id'] ?? sample['id'] ?? '-').toString();
                                 return Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                   child: Row(
                                     children: [
+                                      Expanded(
+                                        flex: 1,
+                                        child: Text(
+                                          sampleId,
+                                          style: TextStyle(fontSize: 13, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
                                       Expanded(
                                         flex: 2,
                                         child: Text(
@@ -978,21 +952,6 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                      if (!isMobile)
-                                        Expanded(
-                                          flex: 1,
-                                          child: Text(
-                                            '${items.length}',
-                                            style: TextStyle(fontSize: 13, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
-                                          ),
-                                        ),
-                                      Expanded(
-                                        flex: 1,
-                                        child: MadBadge(
-                                          text: status,
-                                          variant: status == 'Submitted' ? BadgeVariant.default_ : BadgeVariant.outline,
-                                        ),
-                                      ),
                                       MadDropdownMenuButton(
                                         items: [
                                           MadMenuItem(
@@ -1000,17 +959,6 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
                                             icon: LucideIcons.fileText,
                                             onTap: () => _navigateToPreview(sample),
                                           ),
-                                          MadMenuItem(
-                                            label: 'Edit',
-                                            icon: LucideIcons.pencil,
-                                            onTap: () => _navigateToEdit(sample),
-                                          ),
-                                          if (_uploadFilePaths.isNotEmpty)
-                                            MadMenuItem(
-                                              label: 'Attach File',
-                                              icon: LucideIcons.paperclip,
-                                              onTap: () => _showAttachDialog(sample),
-                                            ),
                                           MadMenuItem(
                                             label: 'Delete',
                                             icon: LucideIcons.trash2,
@@ -1469,29 +1417,6 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
     );
   }
 
-  void _showAttachDialog(Map<String, dynamic> sample) {
-    String? selected = _uploadFilePaths.isNotEmpty ? _uploadFilePaths.first : null;
-    MadFormDialog.show(
-      context: context,
-      title: 'Attach File',
-      maxWidth: 420,
-      content: MadSelect<String>(
-        value: selected,
-        options: _uploadFilePaths.map((e) => MadSelectOption(value: e, label: e)).toList(),
-        onChanged: (v) => selected = v,
-      ),
-      actions: [
-        MadButton(text: 'Cancel', variant: ButtonVariant.outline, onPressed: () => Navigator.pop(context)),
-        MadButton(
-          text: 'Attach',
-          onPressed: () {
-            Navigator.pop(context);
-            if (selected != null) _attachSampleFile(sample, selected!);
-          },
-        ),
-      ],
-    );
-  }
 }
 
 class _SamplesViewModel {

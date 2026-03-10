@@ -7,6 +7,7 @@ export 'purchase_order.dart';
 export 'mir.dart';
 export 'itr.dart';
 export 'vendor.dart';
+export 'vendor_price_list.dart';
 export 'material.dart';
 export 'stock_area.dart';
 export 'challan.dart';
