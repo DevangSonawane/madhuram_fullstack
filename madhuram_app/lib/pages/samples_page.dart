@@ -6,6 +6,7 @@ import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:redux/redux.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
@@ -332,6 +333,19 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
       showToast(context, 'Uploaded ${filePaths.length} file(s)');
     } else {
       showToast(context, res['error']?.toString() ?? 'Upload failed', variant: ToastVariant.error);
+    }
+  }
+
+  String _fileNameFromPath(String path) {
+    final parts = path.split(RegExp(r'[/\\]'));
+    if (parts.isEmpty) return path;
+    return parts.last.isEmpty ? path : parts.last;
+  }
+
+  Future<void> _openUploadedFile(String path) async {
+    final uri = Uri.parse(ApiClient.getApiFileUrl(path));
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && mounted) {
+      showToast(context, 'Could not open file', variant: ToastVariant.error);
     }
   }
 
@@ -727,38 +741,105 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
 
   Widget _buildServerSamplesSection(bool isDark, bool isMobile) {
     final visibleSamples = _filteredServerSamples;
+    final availableUploadedFiles = <String>{
+      ..._uploadFilePaths,
+      ..._serverSamples
+          .map((sample) => (sample['sample_file'] ?? '').toString().trim())
+          .where((path) => path.isNotEmpty),
+    }.toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Wrap(
-          spacing: 69,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(
-              'Project Samples',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
-            ),
-            MadButton(
-              text: 'Create Sample',
-              icon: LucideIcons.plus,
-              variant: ButtonVariant.outline,
-              size: ButtonSize.sm,
-              onPressed: () async {
-                final created = await Navigator.pushNamed(context, '/samples/create', arguments: _projectId);
-                if (created == true && mounted) {
-                  _loadServerSamples();
-                }
-              },
-            ),
-            MadButton(
-              text: 'Upload Files',
-              icon: LucideIcons.upload,
-              size: ButtonSize.sm,
-              onPressed: _uploadSampleFiles,
-            ),
-          ],
-        ),
+        if (isMobile) ...[
+          Text(
+            'Project Samples',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              MadButton(
+                text: 'Create Sample',
+                icon: LucideIcons.plus,
+                variant: ButtonVariant.outline,
+                size: ButtonSize.sm,
+                onPressed: () async {
+                  final created = await Navigator.pushNamed(context, '/samples/create', arguments: _projectId);
+                  if (created == true && mounted) {
+                    _loadServerSamples();
+                  }
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: MadSelect<String>(
+                  value: _selectedUploadedFile.isEmpty ? null : _selectedUploadedFile,
+                  placeholder: 'Select uploaded file',
+                  options: availableUploadedFiles
+                      .map((path) => MadSelectOption(value: path, label: _fileNameFromPath(path)))
+                      .toList(),
+                  onChanged: (value) => setState(() => _selectedUploadedFile = value ?? ''),
+                ),
+              ),
+              const SizedBox(width: 8),
+              MadButton(
+                text: 'Preview',
+                icon: LucideIcons.eye,
+                variant: ButtonVariant.outline,
+                size: ButtonSize.sm,
+                onPressed: _selectedUploadedFile.isEmpty ? null : () => _openUploadedFile(_selectedUploadedFile),
+              ),
+            ],
+          ),
+        ] else
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Project Samples',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
+                ),
+              ),
+              MadButton(
+                text: 'Create Sample',
+                icon: LucideIcons.plus,
+                variant: ButtonVariant.outline,
+                size: ButtonSize.sm,
+                onPressed: () async {
+                  final created = await Navigator.pushNamed(context, '/samples/create', arguments: _projectId);
+                  if (created == true && mounted) {
+                    _loadServerSamples();
+                  }
+                },
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 280,
+                child: MadSelect<String>(
+                  value: _selectedUploadedFile.isEmpty ? null : _selectedUploadedFile,
+                  placeholder: 'Select uploaded file',
+                  options: availableUploadedFiles
+                      .map((path) => MadSelectOption(value: path, label: _fileNameFromPath(path)))
+                      .toList(),
+                  onChanged: (value) => setState(() => _selectedUploadedFile = value ?? ''),
+                ),
+              ),
+              const SizedBox(width: 8),
+              MadButton(
+                text: 'Preview',
+                icon: LucideIcons.eye,
+                variant: ButtonVariant.outline,
+                size: ButtonSize.sm,
+                onPressed: _selectedUploadedFile.isEmpty ? null : () => _openUploadedFile(_selectedUploadedFile),
+              ),
+            ],
+          ),
         const SizedBox(height: 12),
         if (_projectId.isNotEmpty)
           MadCard(
