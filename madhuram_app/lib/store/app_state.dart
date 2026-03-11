@@ -84,7 +84,7 @@ enum AppThemeMode { light, dark, system }
 class ThemeState {
   final AppThemeMode mode;
 
-  const ThemeState({this.mode = AppThemeMode.system});
+  const ThemeState({this.mode = AppThemeMode.light});
 
   ThemeState copyWith({AppThemeMode? mode}) {
     return ThemeState(mode: mode ?? this.mode);
