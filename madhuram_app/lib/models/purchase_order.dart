@@ -108,6 +108,7 @@ class PurchaseOrder {
   final String status;
   final String? source;
   final String? sourceFileName;
+  final String? createdAt;
 
   const PurchaseOrder({
     required this.id,
@@ -138,7 +139,15 @@ class PurchaseOrder {
     this.status = 'Draft',
     this.source,
     this.sourceFileName,
+    this.createdAt,
   });
+
+  static String? _readCleanString(dynamic value) {
+    if (value == null) return null;
+    final v = value.toString().trim();
+    if (v.isEmpty || v.toLowerCase() == 'null') return null;
+    return v;
+  }
 
   factory PurchaseOrder.fromJson(Map<String, dynamic> json) {
     final vendorRaw = json['vendor'];
@@ -187,9 +196,17 @@ class PurchaseOrder {
       id: (json['po_id'] ?? json['id'] ?? '').toString(),
       projectId: json['project_id']?.toString(),
       orderNo: (json['order_no'] ?? json['orderNo'] ?? '').toString(),
-      poDate: (json['po_date'] ?? json['poDate'])?.toString(),
+      poDate: _readCleanString(
+        json['po_date'] ??
+            json['poDate'] ??
+            json['order_date'] ??
+            json['orderDate'] ??
+            json['date'] ??
+            json['created_at'] ??
+            json['createdAt'],
+      ),
       indentNo: (json['indent_no'] ?? json['indentNo'])?.toString(),
-      indentDate: (json['indent_date'] ?? json['indentDate'])?.toString(),
+      indentDate: _readCleanString(json['indent_date'] ?? json['indentDate']),
       companyName: (json['company_name'] ?? json['companyName'])?.toString(),
       companySubtitle: (json['company_subtitle'] ?? json['companySubtitle'])
           ?.toString(),
@@ -233,6 +250,7 @@ class PurchaseOrder {
       status: json['status'] ?? 'Draft',
       source: json['source'],
       sourceFileName: json['sourceFileName'],
+      createdAt: _readCleanString(json['created_at'] ?? json['createdAt']),
     );
   }
 
@@ -269,5 +287,6 @@ class PurchaseOrder {
     'status': status,
     'source': source,
     'sourceFileName': sourceFileName,
+    'created_at': createdAt,
   };
 }

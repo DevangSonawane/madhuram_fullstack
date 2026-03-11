@@ -1,12 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/app_theme.dart';
 import '../store/app_state.dart';
 import '../services/api_client.dart';
+import '../services/file_service.dart';
 import '../models/itr.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
@@ -33,7 +34,7 @@ class _ITRPageFullState extends State<ITRPageFull> {
   String? _statusFilter;
 
   // Upload & Extract tab
-  PlatformFile? _selectedFile;
+  File? _selectedFile;
   bool _isExtracting = false;
   bool _isUploading = false;
   bool _prefillApplied = false;
@@ -260,7 +261,7 @@ class _ITRPageFullState extends State<ITRPageFull> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          _selectedFile!.name,
+                          _selectedFile!.path.split(RegExp(r'[/\\]')).last,
                           style: const TextStyle(fontWeight: FontWeight.w500),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -334,15 +335,12 @@ class _ITRPageFullState extends State<ITRPageFull> {
   }
 
   Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final file = await FileService.pickFileWithSource(
+      context: context,
       allowedExtensions: ['pdf', 'xlsx', 'xls', 'csv'],
-      allowMultiple: false,
     );
-    if (!mounted) return;
-    if (result != null && result.files.single.path != null) {
-      setState(() => _selectedFile = result.files.single);
-    }
+    if (!mounted || file == null) return;
+    setState(() => _selectedFile = file);
   }
 
   Future<void> _runExtract() async {
@@ -363,7 +361,7 @@ class _ITRPageFullState extends State<ITRPageFull> {
     if (!mounted) return;
     setState(() => _isUploading = false);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Upload of "${_selectedFile!.name}" would be sent to server. API integration can be added when endpoint is ready.')),
+      SnackBar(content: Text('Upload of "${_selectedFile!.path.split(RegExp(r'[/\\]')).last}" would be sent to server. API integration can be added when endpoint is ready.')),
     );
   }
 

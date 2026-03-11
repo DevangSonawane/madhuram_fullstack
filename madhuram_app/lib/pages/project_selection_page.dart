@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:http/http.dart' as http;
 import '../theme/app_theme.dart';
@@ -355,8 +354,8 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
 
     final crossAxisCount = responsive.value(mobile: 1, tablet: 2, desktop: responsive.screenWidth > 1200 ? 3 : 2);
     final spacing = responsive.value(mobile: 16.0, tablet: 20.0, desktop: 24.0);
-    // Keep cards tall enough on smaller screens so fixed footer/meta rows do not overflow.
-    final aspectRatio = responsive.value(mobile: 1.45, tablet: 1.35, desktop: 1.3);
+    // Slightly taller mobile cards to avoid vertical overflow with long metadata + action row.
+    final aspectRatio = responsive.value(mobile: 1.28, tablet: 1.35, desktop: 1.3);
 
     return RefreshIndicator(
       onRefresh: _loadProjects,
@@ -424,7 +423,7 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                 ),
               ],
             ),
-            SizedBox(height: responsive.value(mobile: 2, tablet: 4, desktop: 6)),
+            SizedBox(height: responsive.value(mobile: 4, tablet: 6, desktop: 8)),
             Text(
               project.client ?? '',
               style: TextStyle(
@@ -434,6 +433,7 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+            SizedBox(height: responsive.value(mobile: 8, tablet: 10, desktop: 12)),
             const Spacer(),
             // Project info
             _buildInfoRow(
@@ -671,14 +671,13 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                       variant: ButtonVariant.outline,
                       size: ButtonSize.sm,
                       onPressed: () async {
-                        final result = await FilePicker.platform.pickFiles(
-                          type: FileType.custom,
+                        final file = await FileService.pickFileWithSource(
+                          context: context,
                           allowedExtensions: ['pdf', 'csv', 'xlsx', 'xls'],
-                          withData: false,
                         );
-                        if (result != null && result.files.isNotEmpty && result.files.single.path != null) {
-                          workOrderFile = File(result.files.single.path!);
-                          workOrderFileName = result.files.single.name;
+                        if (file != null) {
+                          workOrderFile = file;
+                          workOrderFileName = file.path.split(RegExp(r'[/\\]')).last;
                           extractError = null;
                           if (workOrderFileName!.toLowerCase().endsWith('.pdf')) {
                             extracting = true;
@@ -710,6 +709,10 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                             }
                           }
                           setDialogState(() {});
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('No file selected')),
+                          );
                         }
                       },
                     ),
@@ -774,14 +777,15 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                       variant: ButtonVariant.outline,
                       size: ButtonSize.sm,
                       onPressed: () async {
-                        final result = await FilePicker.platform.pickFiles(
-                          type: FileType.any,
-                          withData: false,
-                        );
-                        if (result != null && result.files.isNotEmpty && result.files.single.path != null) {
-                          masFile = File(result.files.single.path!);
-                          masFileName = result.files.single.name;
+                        final file = await FileService.pickFileWithSource(context: context);
+                        if (file != null) {
+                          masFile = file;
+                          masFileName = file.path.split(RegExp(r'[/\\]')).last;
                           setDialogState(() {});
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('No file selected')),
+                          );
                         }
                       },
                     ),

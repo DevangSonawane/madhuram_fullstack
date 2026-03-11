@@ -153,9 +153,6 @@ class AppSidebar extends StatelessWidget {
                   ),
                 ),
 
-                // Footer
-                if (!effectiveCollapsed)
-                  _buildFooter(context, isDark, responsive),
               ],
             ),
           ),
@@ -317,98 +314,6 @@ class AppSidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildFooter(
-    BuildContext context,
-    bool isDark,
-    Responsive responsive,
-  ) {
-    return Container(
-      margin: EdgeInsets.all(
-        responsive.value(mobile: 12, tablet: 14, desktop: 16),
-      ),
-      padding: EdgeInsets.all(
-        responsive.value(mobile: 12, tablet: 14, desktop: 16),
-      ),
-      decoration: BoxDecoration(
-        color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(
-          0.5,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: (isDark ? Colors.white : Colors.black).withOpacity(0.05),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: responsive.value(mobile: 28, tablet: 30, desktop: 32),
-            height: responsive.value(mobile: 28, tablet: 30, desktop: 32),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.primaryColor, Colors.purple],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Center(
-              child: Text(
-                'V1',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: responsive.value(
-                    mobile: 10,
-                    tablet: 10,
-                    desktop: 11,
-                  ),
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Inventory System',
-                  style: TextStyle(
-                    fontSize: responsive.value(
-                      mobile: 12,
-                      tablet: 13,
-                      desktop: 14,
-                    ),
-                    fontWeight: FontWeight.w500,
-                    color: isDark
-                        ? AppTheme.darkForeground
-                        : AppTheme.lightForeground,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  'v1.0.0',
-                  style: TextStyle(
-                    fontSize: responsive.value(
-                      mobile: 10,
-                      tablet: 11,
-                      desktop: 12,
-                    ),
-                    color:
-                        (isDark
-                                ? AppTheme.darkForeground
-                                : AppTheme.lightForeground)
-                            .withOpacity(0.5),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// Toggle button for sidebar

@@ -1135,6 +1135,39 @@ class ApiClient {
     return _handleResponse(res);
   }
 
+  static Future<Map<String, dynamic>> compareVendorPriceListItems(
+    Map<String, dynamic> params,
+  ) async {
+    final token = await _getToken();
+    const allowedParams = <String>{
+      'q',
+      'item_name',
+      'product_name',
+      'category',
+      'vendor_id',
+      'vendor_ids',
+      'project_id',
+      'status',
+      'limit',
+      'offset',
+    };
+
+    final query = <String, String>{};
+    params.forEach((key, value) {
+      if (!allowedParams.contains(key)) return;
+      if (value == null) return;
+      final asString = value.toString().trim();
+      if (asString.isEmpty) return;
+      query[key] = asString;
+    });
+
+    final uri = Uri.parse(
+      '$baseUrl/api/vendor-price-list/compare',
+    ).replace(queryParameters: query.isEmpty ? null : query);
+    final res = await _get(uri, headers: _authHeaders(token));
+    return _handleResponse(res);
+  }
+
   // ============================================================================
   // Materials (Product Master)
   // ============================================================================

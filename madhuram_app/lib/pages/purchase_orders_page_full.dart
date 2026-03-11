@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:intl/intl.dart';
@@ -317,15 +316,44 @@ class _PurchaseOrdersPageFullState extends State<PurchaseOrdersPageFull> {
   bool _isLoading = true;
   String? _error;
   List<PurchaseOrder> _orders = [];
-  String _mobileCreateSection = 'upload';
+  String _lastLoadedProjectId = '';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
 
   // Upload & Extract tab
-  File? _selectedFile;
   String _extractionMessage = '';
   bool _isUploading = false;
-  bool _isExtracting = false;
+
+  Future<void> _pickAndUploadPOFile() async {
+    if (_isUploading) return;
+    final picked = await FileService.pickFile(
+      context: context,
+      allowedExtensions: ['pdf'],
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      _extractionMessage = '';
+      _isUploading = true;
+    });
+
+    final result = await ApiClient.uploadPOFile(picked);
+    if (!mounted) return;
+
+    setState(() => _isUploading = false);
+    if (result['success'] == true) {
+      await _loadOrders();
+      if (!mounted) return;
+      setState(() {
+        _extractionMessage = 'Upload successful.';
+      });
+    } else {
+      setState(() {
+        _extractionMessage =
+            result['error']?.toString() ?? 'Upload failed.';
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -335,13 +363,20 @@ class _PurchaseOrdersPageFullState extends State<PurchaseOrdersPageFull> {
     });
   }
 
+  String _resolveCurrentProjectId() {
+    final store = StoreProvider.of<AppState>(context);
+    return store.state.project.selectedProjectId ??
+        store.state.project.selectedProject?['project_id']?.toString() ??
+        '';
+  }
+
   Future<void> _loadOrders() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
-    final store = StoreProvider.of<AppState>(context);
-    final projectId = store.state.project.selectedProjectId ?? '';
+    final projectId = _resolveCurrentProjectId();
+    _lastLoadedProjectId = projectId;
 
     if (projectId.isEmpty) {
       setState(() {
@@ -406,11 +441,44 @@ class _PurchaseOrdersPageFullState extends State<PurchaseOrdersPageFull> {
 
   int get _totalPages => (_filteredOrders.length / _itemsPerPage).ceil();
 
+  String _dateOnly(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) return '-';
+
+    final iso = RegExp(r'^\d{4}-\d{2}-\d{2}').firstMatch(value);
+    if (iso != null) return iso.group(0)!;
+
+    final slash = RegExp(r'^\d{2}/\d{2}/\d{4}').firstMatch(value);
+    if (slash != null) return slash.group(0)!;
+
+    final dash = RegExp(r'^\d{2}-\d{2}-\d{4}').firstMatch(value);
+    if (dash != null) return dash.group(0)!;
+
+    final parsed = DateTime.tryParse(value);
+    if (parsed != null) return DateFormat('yyyy-MM-dd').format(parsed);
+
+    final firstToken = value.split(' ').first.trim();
+    return firstToken.isEmpty ? value : firstToken;
+  }
+
+  String _recentPoDate(PurchaseOrder order) {
+    final date = order.poDate ?? order.indentDate ?? order.createdAt;
+    if (date == null || date.trim().isEmpty) return '-';
+    return _dateOnly(date);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final responsive = Responsive(context);
     final isMobile = responsive.isMobile;
+    final currentProjectId = _resolveCurrentProjectId();
+
+    if (currentProjectId != _lastLoadedProjectId && !_isLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadOrders();
+      });
+    }
 
     return ProtectedRoute(
       title: 'Purchase Orders',
@@ -481,7 +549,7 @@ class _PurchaseOrdersPageFullState extends State<PurchaseOrdersPageFull> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Upload a PO file for extraction or fill the form manually.',
+                            'Upload a PO file directly from camera, gallery, or files.',
                             style: TextStyle(
                               color: isDark
                                   ? AppTheme.darkMutedForeground
@@ -489,47 +557,36 @@ class _PurchaseOrdersPageFullState extends State<PurchaseOrdersPageFull> {
                             ),
                           ),
                           const SizedBox(height: 14),
-                          if (isMobile) ...[
-                            _buildMobileCreateSectionSwitcher(isDark),
-                            const SizedBox(height: 12),
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 220),
-                              child: _mobileCreateSection == 'upload'
-                                  ? _buildUploadExtractTab(
-                                      isDark,
-                                      isMobile: true,
-                                      key: const ValueKey('upload-mobile'),
-                                    )
-                                  : _buildManualEntryTab(
-                                      isDark,
-                                      isMobile,
-                                      key: const ValueKey('manual-mobile'),
-                                    ),
-                            ),
-                          ] else
-                            SizedBox(
-                              height: 860,
-                              child: MadTabs(
-                                defaultTab: 'upload',
-                                tabs: [
-                                  MadTabItem(
-                                    id: 'upload',
-                                    label: 'Upload & Extract',
-                                    icon: LucideIcons.upload,
-                                    content: _buildUploadExtractTab(isDark),
-                                  ),
-                                  MadTabItem(
-                                    id: 'manual',
-                                    label: 'Manual Entry',
-                                    icon: LucideIcons.filePenLine,
-                                    content: _buildManualEntryTab(
-                                      isDark,
-                                      isMobile,
-                                    ),
-                                  ),
-                                ],
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              MadButton(
+                                text: _isUploading ? 'Uploading...' : 'Upload',
+                                icon: LucideIcons.upload,
+                                loading: _isUploading,
+                                onPressed: _isUploading ? null : _pickAndUploadPOFile,
+                              ),
+                              MadButton(
+                                text: 'Manual Entry',
+                                icon: LucideIcons.filePenLine,
+                                variant: ButtonVariant.outline,
+                                onPressed: _openCreatePOPage,
+                              ),
+                            ],
+                          ),
+                          if (_extractionMessage.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              _extractionMessage,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark
+                                    ? AppTheme.darkMutedForeground
+                                    : AppTheme.lightMutedForeground,
                               ),
                             ),
+                          ],
                         ],
                       ),
                     ),
@@ -541,275 +598,6 @@ class _PurchaseOrdersPageFullState extends State<PurchaseOrdersPageFull> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildMobileCreateSectionSwitcher(bool isDark) {
-    Widget buildOption({
-      required String id,
-      required String label,
-      required IconData icon,
-    }) {
-      final selected = _mobileCreateSection == id;
-      return Expanded(
-        child: MadButton(
-          text: label,
-          icon: icon,
-          size: ButtonSize.sm,
-          variant: selected ? ButtonVariant.primary : ButtonVariant.outline,
-          onPressed: () async {
-            if (id == 'manual') {
-              await _openCreatePOPage();
-              if (mounted) {
-                setState(() => _mobileCreateSection = 'upload');
-              }
-              return;
-            }
-            setState(() => _mobileCreateSection = id);
-          },
-        ),
-      );
-    }
-
-    return Row(
-      children: [
-        buildOption(id: 'upload', label: 'Upload', icon: LucideIcons.upload),
-        const SizedBox(width: 10),
-        buildOption(
-          id: 'manual',
-          label: 'Manual',
-          icon: LucideIcons.filePenLine,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildUploadExtractTab(
-    bool isDark, {
-    bool isMobile = false,
-    Key? key,
-  }) {
-    final filename = _selectedFile?.path.split(RegExp(r'[/\\]')).last ?? '';
-    return SingleChildScrollView(
-      key: key,
-      padding: EdgeInsets.all(isMobile ? 0 : 24),
-      child: MadCard(
-        child: Padding(
-          padding: EdgeInsets.all(isMobile ? 16 : 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Upload & Extract',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: isDark
-                      ? AppTheme.darkForeground
-                      : AppTheme.lightForeground,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Select a PO PDF file to upload and extract PO data.',
-                style: TextStyle(
-                  color: isDark
-                      ? AppTheme.darkMutedForeground
-                      : AppTheme.lightMutedForeground,
-                ),
-              ),
-              const SizedBox(height: 24),
-              MadButton(
-                icon: LucideIcons.fileUp,
-                text: 'Select File',
-                variant: ButtonVariant.outline,
-                onPressed: () async {
-                  final file = await FileService.pickFile(
-                    allowedExtensions: ['pdf'],
-                  );
-                  if (file != null && mounted) {
-                    setState(() {
-                      _selectedFile = file;
-                      _extractionMessage = '';
-                    });
-                  }
-                },
-              ),
-              if (filename.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted)
-                        .withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        LucideIcons.fileText,
-                        size: 20,
-                        color: isDark
-                            ? AppTheme.darkMutedForeground
-                            : AppTheme.lightMutedForeground,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          filename,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w500,
-                            color: isDark
-                                ? AppTheme.darkForeground
-                                : AppTheme.lightForeground,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  MadButton(
-                    icon: LucideIcons.scanSearch,
-                    text: 'Extract Data',
-                    variant: ButtonVariant.outline,
-                    disabled: _selectedFile == null,
-                    onPressed: _selectedFile == null
-                        ? null
-                        : () async {
-                            if (_selectedFile == null) return;
-                            setState(() {
-                              _isExtracting = true;
-                              _extractionMessage = 'Extracting PO data...';
-                            });
-                            try {
-                              final result = await ApiClient.parsePOFile(
-                                _selectedFile!,
-                              );
-                              if (!mounted) return;
-
-                              if (result['success'] != true) {
-                                setState(() {
-                                  _isExtracting = false;
-                                  _extractionMessage =
-                                      result['error']?.toString() ??
-                                      'Failed to extract PO data.';
-                                });
-                                return;
-                              }
-
-                              final raw = result['data'];
-                              Map<String, dynamic> extracted = {};
-                              String fileName = _selectedFile!.path
-                                  .split(RegExp(r'[/\\]'))
-                                  .last;
-
-                              if (raw is Map) {
-                                if (raw['filename'] != null &&
-                                    raw['filename'].toString().isNotEmpty) {
-                                  fileName = raw['filename'].toString();
-                                }
-
-                                final level1 = raw['data'];
-                                if (level1 is Map) {
-                                  final level2 = level1['data'];
-                                  if (level2 is Map) {
-                                    extracted = Map<String, dynamic>.from(
-                                      level2,
-                                    );
-                                  } else {
-                                    extracted = Map<String, dynamic>.from(
-                                      level1,
-                                    );
-                                  }
-                                } else {
-                                  extracted = Map<String, dynamic>.from(raw);
-                                }
-                              }
-
-                              if (extracted.isEmpty) {
-                                setState(() {
-                                  _isExtracting = false;
-                                  _extractionMessage =
-                                      'Extraction completed but no structured data was returned.';
-                                });
-                                return;
-                              }
-
-                              extracted['source'] =
-                                  extracted['source'] ?? 'Extracted';
-                              extracted['sourceFileName'] = fileName;
-
-                              setState(() {
-                                _isExtracting = false;
-                                _extractionMessage =
-                                    'Extraction successful. Review and submit.';
-                              });
-                              _showPOPreview(extracted);
-                            } catch (e) {
-                              if (!mounted) return;
-                              setState(() {
-                                _isExtracting = false;
-                                _extractionMessage =
-                                    'Extraction failed: ${e.toString()}';
-                              });
-                            }
-                          },
-                  ),
-                  const SizedBox(width: 12),
-                  MadButton(
-                    icon: LucideIcons.upload,
-                    text: 'Upload',
-                    disabled: _selectedFile == null || _isUploading,
-                    onPressed: _selectedFile == null || _isUploading
-                        ? null
-                        : () async {
-                            if (_selectedFile == null) return;
-                            setState(() => _isUploading = true);
-                            final result = await ApiClient.uploadPOFile(
-                              _selectedFile!,
-                            );
-                            if (!mounted) return;
-                            setState(() => _isUploading = false);
-                            if (result['success'] == true) {
-                              _loadOrders();
-                              setState(() {
-                                _selectedFile = null;
-                                _extractionMessage = 'Upload successful.';
-                              });
-                            }
-                          },
-                  ),
-                ],
-              ),
-              if (_isExtracting)
-                const Padding(
-                  padding: EdgeInsets.only(top: 16),
-                  child: SizedBox(
-                    height: 24,
-                    width: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              if (_extractionMessage.isNotEmpty && !_isExtracting) ...[
-                const SizedBox(height: 16),
-                Text(
-                  _extractionMessage,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: isDark
-                        ? AppTheme.darkMutedForeground
-                        : AppTheme.lightMutedForeground,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -980,7 +768,7 @@ class _PurchaseOrdersPageFullState extends State<PurchaseOrdersPageFull> {
             const SizedBox(height: 10),
             Row(
               children: [
-                Expanded(child: _buildMobileMeta('Date', order.poDate ?? '-')),
+                Expanded(child: _buildMobileMeta('Date', _recentPoDate(order))),
                 Expanded(
                   child: _buildMobileMeta('Items', '${order.items.length}'),
                 ),
@@ -1129,7 +917,7 @@ class _PurchaseOrdersPageFullState extends State<PurchaseOrdersPageFull> {
               Expanded(
                 flex: 1,
                 child: Text(
-                  order.poDate ?? '-',
+                  _recentPoDate(order),
                   style: TextStyle(
                     color: isDark
                         ? AppTheme.darkMutedForeground
@@ -2749,76 +2537,6 @@ class _ManualPOFormState extends State<_ManualPOForm> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Company Details',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: isDark
-                      ? AppTheme.darkForeground
-                      : AppTheme.lightForeground,
-                ),
-              ),
-              const SizedBox(height: 12),
-              MadInput(
-                labelText: 'Company Name (required)',
-                hintText: 'Company name',
-                controller: _companyName,
-              ),
-              const SizedBox(height: 12),
-              if (isMobile)
-                Column(
-                  children: [
-                    MadInput(
-                      labelText: 'Company Subtitle',
-                      hintText: 'Subtitle',
-                      controller: _companySubtitle,
-                    ),
-                    const SizedBox(height: 12),
-                    MadInput(
-                      labelText: 'Company Email',
-                      hintText: 'email@example.com',
-                      controller: _companyEmail,
-                      keyboardType: TextInputType.emailAddress,
-                    ),
-                    const SizedBox(height: 12),
-                    MadInput(
-                      labelText: 'Company GST',
-                      hintText: 'GST number',
-                      controller: _companyGst,
-                    ),
-                  ],
-                )
-              else
-                Row(
-                  children: [
-                    Expanded(
-                      child: MadInput(
-                        labelText: 'Company Subtitle',
-                        hintText: 'Subtitle',
-                        controller: _companySubtitle,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: MadInput(
-                        labelText: 'Company Email',
-                        hintText: 'email@example.com',
-                        controller: _companyEmail,
-                        keyboardType: TextInputType.emailAddress,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: MadInput(
-                        labelText: 'Company GST',
-                        hintText: 'GST number',
-                        controller: _companyGst,
-                      ),
-                    ),
-                  ],
-                ),
-              const SizedBox(height: 24),
               Text(
                 'Order Details',
                 style: TextStyle(

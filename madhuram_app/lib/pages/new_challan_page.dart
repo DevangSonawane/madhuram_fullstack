@@ -515,92 +515,152 @@ class _NewChallanPageState extends State<NewChallanPage> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        if (_selectedPoItems.isEmpty)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isDark
-                                    ? AppTheme.darkBorder
-                                    : AppTheme.lightBorder,
-                              ),
-                            ),
-                            child: Text(
-                              'Select a PO to view linked PO items.',
-                              style: TextStyle(
-                                color: isDark
-                                    ? AppTheme.darkMutedForeground
-                                    : AppTheme.lightMutedForeground,
-                              ),
-                            ),
-                          )
-                        else ...[
-                          if (!isMobile)
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                              child: Row(
-                                children: [
-                                  _previewHeader('Name', flex: 2, isDark: isDark),
-                                  _previewHeader('Description', flex: 3, isDark: isDark),
-                                  _previewHeader('Width', flex: 1, isDark: isDark),
-                                  _previewHeader('Length', flex: 1, isDark: isDark),
-                                  _previewHeader('Quantity', flex: 1, isDark: isDark),
-                                  _previewHeader('Price', flex: 1, isDark: isDark),
-                                ],
-                              ),
-                            ),
-                          const SizedBox(height: 6),
-                          ..._selectedPoItems.map(
-                            (item) => Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: isDark
-                                      ? AppTheme.darkBorder
-                                      : AppTheme.lightBorder,
-                                ),
-                                color: (isDark
-                                        ? AppTheme.darkMuted
-                                        : AppTheme.lightMuted)
-                                    .withValues(alpha: 0.2),
-                              ),
-                              child: isMobile
-                                  ? Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(item.name,
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.w600)),
-                                        const SizedBox(height: 4),
-                                        Text(item.description.isEmpty
-                                            ? '-'
-                                            : item.description),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                            'W: ${item.width.isEmpty ? '-' : item.width}  L: ${item.length.isEmpty ? '-' : item.length}'),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                            'Qty: ${item.quantity.isEmpty ? '-' : item.quantity}  Price: ${item.price.isEmpty ? '-' : item.price}'),
-                                      ],
-                                    )
-                                  : Row(
-                                      children: [
-                                        _previewCell(item.name, flex: 2),
-                                        _previewCell(item.description, flex: 3),
-                                        _previewCell(item.width, flex: 1),
-                                        _previewCell(item.length, flex: 1),
-                                        _previewCell(item.quantity, flex: 1),
-                                        _previewCell(item.price, flex: 1),
-                                      ],
-                                    ),
+                        Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isDark
+                                  ? AppTheme.darkBorder
+                                  : AppTheme.lightBorder,
                             ),
                           ),
-                        ],
+                          child: _selectedPoItems.isEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: Text(
+                                    'Select a PO to view linked PO items.',
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? AppTheme.darkMutedForeground
+                                          : AppTheme.lightMutedForeground,
+                                    ),
+                                  ),
+                                )
+                              : Column(
+                                  children: [
+                                    if (!isMobile)
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: (isDark
+                                                  ? AppTheme.darkMuted
+                                                  : AppTheme.lightMuted)
+                                              .withValues(alpha: 0.35),
+                                          borderRadius:
+                                              const BorderRadius.vertical(
+                                            top: Radius.circular(9),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            _previewHeader(
+                                              'Name',
+                                              flex: 2,
+                                              isDark: isDark,
+                                            ),
+                                            _previewHeader(
+                                              'Description',
+                                              flex: 3,
+                                              isDark: isDark,
+                                            ),
+                                            _previewHeader(
+                                              'Width',
+                                              flex: 1,
+                                              isDark: isDark,
+                                            ),
+                                            _previewHeader(
+                                              'Length',
+                                              flex: 1,
+                                              isDark: isDark,
+                                            ),
+                                            _previewHeader(
+                                              'Quantity',
+                                              flex: 1,
+                                              isDark: isDark,
+                                            ),
+                                            _previewHeader(
+                                              'Price',
+                                              flex: 1,
+                                              isDark: isDark,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ..._selectedPoItems.asMap().entries.map((entry) {
+                                      final index = entry.key;
+                                      final item = entry.value;
+                                      final isLast = index == _selectedPoItems.length - 1;
+                                      return Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          border: isLast
+                                              ? null
+                                              : Border(
+                                                  bottom: BorderSide(
+                                                    color: isDark
+                                                        ? AppTheme.darkBorder
+                                                        : AppTheme.lightBorder,
+                                                  ),
+                                                ),
+                                        ),
+                                        child: isMobile
+                                            ? Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    item.name,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    item.description.isEmpty
+                                                        ? '-'
+                                                        : item.description,
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  Text(
+                                                    'W: ${item.width.isEmpty ? '-' : item.width}  L: ${item.length.isEmpty ? '-' : item.length}',
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    'Qty: ${item.quantity.isEmpty ? '-' : item.quantity}  Price: ${item.price.isEmpty ? '-' : item.price}',
+                                                  ),
+                                                ],
+                                              )
+                                            : Row(
+                                                children: [
+                                                  _previewCell(item.name, flex: 2),
+                                                  _previewCell(
+                                                    item.description,
+                                                    flex: 3,
+                                                  ),
+                                                  _previewCell(item.width, flex: 1),
+                                                  _previewCell(item.length, flex: 1),
+                                                  _previewCell(
+                                                    item.quantity,
+                                                    flex: 1,
+                                                  ),
+                                                  _previewCell(item.price, flex: 1),
+                                                ],
+                                              ),
+                                      );
+                                    }),
+                                  ],
+                                ),
+                        ),
                       ],
                     ),
                   ),

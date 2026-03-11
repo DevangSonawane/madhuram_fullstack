@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_redux/flutter_redux.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:redux/redux.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,6 +12,7 @@ import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
 import '../store/app_state.dart';
 import '../services/api_client.dart';
+import '../services/file_service.dart';
 
 /// Floor-wise configuration row (matches React Samples floor config)
 class FloorConfig {
@@ -69,7 +69,7 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
 
   String _workTypeFilter = 'CPVC'; // CPVC | Suspended
   List<FloorConfig> _floorConfigs = List.from(_initialFloorData);
-  PlatformFile? _uploadedFile;
+  File? _uploadedFile;
   bool _isExtracting = false;
   bool _loadingServer = false;
   List<Map<String, dynamic>> _serverSamples = [];
@@ -115,14 +115,13 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
   }
 
   Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final file = await FileService.pickFileWithSource(
+      context: context,
       allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg'],
-      withData: false,
     );
-    if (result == null || result.files.isEmpty) return;
+    if (file == null) return;
     setState(() {
-      _uploadedFile = result.files.single;
+      _uploadedFile = file;
     });
   }
 
@@ -316,15 +315,7 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
   }
 
   Future<void> _uploadSampleFiles() async {
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      withData: false,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final files = <File>[];
-    for (final f in result.files) {
-      if (f.path != null) files.add(File(f.path!));
-    }
+    final files = await FileService.pickMultipleFilesWithSource(context: context);
     if (files.isEmpty) return;
     final res = await ApiClient.uploadSampleFiles(files);
     if (!mounted) return;
@@ -601,7 +592,7 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _uploadedFile?.name ?? 'No file selected',
+                      _uploadedFile?.path.split(RegExp(r'[/\\]')).last ?? 'No file selected',
                       style: TextStyle(fontSize: 12, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -618,7 +609,7 @@ class _SamplesPageFullState extends State<SamplesPageFull> {
             if (isMobile && _uploadedFile != null) ...[
               const SizedBox(height: 8),
               Text(
-                _uploadedFile!.name,
+                _uploadedFile!.path.split(RegExp(r'[/\\]')).last,
                 style: TextStyle(fontSize: 12, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
                 overflow: TextOverflow.ellipsis,
               ),

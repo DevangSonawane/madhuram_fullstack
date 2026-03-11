@@ -219,6 +219,24 @@ const accessControlCatalog = <AccessControlPage>[
     ],
   ),
   AccessControlPage(
+    pagePath: '/vendor-comparison',
+    pageTitle: 'Vendor Comparison',
+    category: 'Procurement',
+    description: 'Compare price list items across vendors.',
+    functions: [
+      AccessControlFunction(
+        key: 'vendor_comparison.view',
+        label: 'View Vendor Comparison',
+        description: 'Open vendor comparison and review grouped offers.',
+      ),
+      AccessControlFunction(
+        key: 'vendor_comparison.search',
+        label: 'Search Comparison',
+        description: 'Search price list items to load comparison results.',
+      ),
+    ],
+  ),
+  AccessControlPage(
     pagePath: '/challans',
     pageTitle: 'Delivery Challans',
     category: 'Delivery & Inspection',

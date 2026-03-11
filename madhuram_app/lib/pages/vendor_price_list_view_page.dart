@@ -143,6 +143,26 @@ class _VendorPriceListViewPageState extends State<VendorPriceListViewPage> {
     return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
+  String _formatPriceValue(double value) {
+    final fixed = value.toStringAsFixed(2);
+    return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
+  void _recalculateNetPrice(
+    int index, {
+    String? nextPricePerPiece,
+    String? nextDiscountPrice,
+  }) {
+    final row = _items[index];
+    final priceRaw = (nextPricePerPiece ?? row['price_per_pic'] ?? '').trim();
+    final discountRaw =
+        (nextDiscountPrice ?? row['discount_price'] ?? '').trim();
+    final price = double.tryParse(priceRaw);
+    final discount = double.tryParse(discountRaw) ?? 0;
+    final netPrice = price == null ? '' : _formatPriceValue(price - discount);
+    _updateItem(index, 'net_price', netPrice);
+  }
+
   String _inferUnit(Map<String, String> row) {
     final explicit = (row['size_unit'] ?? '').toLowerCase();
     if (explicit == 'inch' || explicit == 'mm') return explicit;
@@ -236,7 +256,10 @@ class _VendorPriceListViewPageState extends State<VendorPriceListViewPage> {
     String key,
     String label, {
     TextInputType keyboardType = TextInputType.text,
+    bool readOnly = false,
+    ValueChanged<String>? onFieldChanged,
   }) {
+    final value = _items[index][key] ?? '';
     return SizedBox(
       width: 220,
       child: Column(
@@ -248,10 +271,23 @@ class _VendorPriceListViewPageState extends State<VendorPriceListViewPage> {
           ),
           const SizedBox(height: 6),
           TextFormField(
-            key: ValueKey('view-item-$index-$key'),
-            initialValue: _items[index][key] ?? '',
+            key: ValueKey(
+              readOnly
+                  ? 'view-item-$index-$key-$value'
+                  : 'view-item-$index-$key',
+            ),
+            initialValue: value,
             keyboardType: keyboardType,
-            onChanged: (value) => _updateItem(index, key, value),
+            readOnly: readOnly,
+            onChanged: readOnly
+                ? null
+                : (value) {
+                    if (onFieldChanged != null) {
+                      onFieldChanged(value);
+                      return;
+                    }
+                    _updateItem(index, key, value);
+                  },
             decoration: const InputDecoration(
               isDense: true,
               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 9),
@@ -378,18 +414,27 @@ class _VendorPriceListViewPageState extends State<VendorPriceListViewPage> {
                 'price_per_pic',
                 'Price Per Piece',
                 keyboardType: TextInputType.number,
+                onFieldChanged: (value) {
+                  _updateItem(index, 'price_per_pic', value);
+                  _recalculateNetPrice(index, nextPricePerPiece: value);
+                },
               ),
               _itemField(
                 index,
                 'discount_price',
                 'Discount Price',
                 keyboardType: TextInputType.number,
+                onFieldChanged: (value) {
+                  _updateItem(index, 'discount_price', value);
+                  _recalculateNetPrice(index, nextDiscountPrice: value);
+                },
               ),
               _itemField(
                 index,
                 'net_price',
                 'Net Price',
                 keyboardType: TextInputType.number,
+                readOnly: true,
               ),
             ],
           ),

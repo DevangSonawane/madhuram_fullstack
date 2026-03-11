@@ -1,8 +1,9 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
-import 'package:file_picker/file_picker.dart';
+import 'file_service.dart';
 
 /// BOQ Item extracted from PDF
 class ExtractedBOQItem {
@@ -88,29 +89,19 @@ class BOQExtractor {
   );
 
   /// Pick and extract BOQ from a PDF file
-  static Future<BOQExtractionResult> pickAndExtract() async {
+  static Future<BOQExtractionResult> pickAndExtract(BuildContext context) async {
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
+      final file = await FileService.pickFileWithSource(
+        context: context,
         allowedExtensions: ['pdf'],
-        withData: true,
       );
-
-      if (result == null || result.files.isEmpty) {
+      if (file == null) {
         return const BOQExtractionResult(error: 'No file selected');
       }
 
-      final file = result.files.first;
-      
-      if (file.bytes == null && file.path == null) {
-        return const BOQExtractionResult(error: 'Could not read file');
-      }
-
       Uint8List bytes;
-      if (file.bytes != null) {
-        bytes = file.bytes!;
-      } else if (!kIsWeb && file.path != null) {
-        bytes = await File(file.path!).readAsBytes();
+      if (!kIsWeb) {
+        bytes = await File(file.path).readAsBytes();
       } else {
         return const BOQExtractionResult(error: 'Could not read file data');
       }

@@ -1,15 +1,141 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+enum UploadSourceOption { camera, gallery, files }
+
 /// File handling service for picking, saving, and sharing files
 class FileService {
-  /// Pick a single file
-  static Future<File?> pickFile({
+  static final ImagePicker _imagePicker = ImagePicker();
+
+  static Future<UploadSourceOption?> _showUploadSourcePicker(
+    BuildContext context,
+  ) async {
+    return showDialog<UploadSourceOption>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Select Source'),
+          contentPadding: const EdgeInsets.only(top: 12, bottom: 8),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined),
+                title: const Text('Camera'),
+                onTap: () => Navigator.of(
+                  dialogContext,
+                ).pop(UploadSourceOption.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Gallery'),
+                onTap: () => Navigator.of(
+                  dialogContext,
+                ).pop(UploadSourceOption.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.insert_drive_file_outlined),
+                title: const Text('Files'),
+                onTap: () => Navigator.of(
+                  dialogContext,
+                ).pop(UploadSourceOption.files),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Pick one file after source selection (Camera / Gallery / Files).
+  static Future<File?> pickFileWithSource({
+    required BuildContext context,
     List<String>? allowedExtensions,
     FileType type = FileType.any,
   }) async {
+    UploadSourceOption? source;
+    try {
+      source = await _showUploadSourcePicker(context);
+    } catch (e) {
+      // Fallback so upload tap never becomes a no-op if source UI fails.
+      return pickFile(allowedExtensions: allowedExtensions, type: type);
+    }
+    if (source == null) return null;
+
+    try {
+      if (source == UploadSourceOption.files) {
+        return pickFile(allowedExtensions: allowedExtensions, type: type);
+      }
+
+      final image = await _imagePicker.pickImage(
+        source: source == UploadSourceOption.camera
+            ? ImageSource.camera
+            : ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (image == null) return null;
+      return File(image.path);
+    } catch (e) {
+      print('Error picking file with source: $e');
+      return null;
+    }
+  }
+
+  /// Pick multiple files after source selection.
+  /// Camera/Gallery returns a single image as a one-item list.
+  static Future<List<File>> pickMultipleFilesWithSource({
+    required BuildContext context,
+    List<String>? allowedExtensions,
+    FileType type = FileType.any,
+  }) async {
+    UploadSourceOption? source;
+    try {
+      source = await _showUploadSourcePicker(context);
+    } catch (e) {
+      return pickMultipleFiles(allowedExtensions: allowedExtensions, type: type);
+    }
+    if (source == null) return [];
+
+    try {
+      if (source == UploadSourceOption.files) {
+        return pickMultipleFiles(
+          allowedExtensions: allowedExtensions,
+          type: type,
+        );
+      }
+
+      final image = await _imagePicker.pickImage(
+        source: source == UploadSourceOption.camera
+            ? ImageSource.camera
+            : ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (image == null) return [];
+      return [File(image.path)];
+    } catch (e) {
+      print('Error picking multiple files with source: $e');
+      return [];
+    }
+  }
+
+  /// Pick a single file
+  static Future<File?> pickFile({
+    BuildContext? context,
+    List<String>? allowedExtensions,
+    FileType type = FileType.any,
+  }) async {
+    if (context != null) {
+      return pickFileWithSource(
+        context: context,
+        allowedExtensions: allowedExtensions,
+        type: type,
+      );
+    }
     try {
       final result = await FilePicker.platform.pickFiles(
         type: allowedExtensions != null ? FileType.custom : type,
@@ -27,9 +153,17 @@ class FileService {
 
   /// Pick multiple files
   static Future<List<File>> pickMultipleFiles({
+    BuildContext? context,
     List<String>? allowedExtensions,
     FileType type = FileType.any,
   }) async {
+    if (context != null) {
+      return pickMultipleFilesWithSource(
+        context: context,
+        allowedExtensions: allowedExtensions,
+        type: type,
+      );
+    }
     try {
       final result = await FilePicker.platform.pickFiles(
         type: allowedExtensions != null ? FileType.custom : type,
@@ -49,18 +183,18 @@ class FileService {
   }
 
   /// Pick an Excel file
-  static Future<File?> pickExcelFile() async {
-    return pickFile(allowedExtensions: ['xlsx', 'xls']);
+  static Future<File?> pickExcelFile({BuildContext? context}) async {
+    return pickFile(context: context, allowedExtensions: ['xlsx', 'xls']);
   }
 
   /// Pick a PDF file
-  static Future<File?> pickPdfFile() async {
-    return pickFile(allowedExtensions: ['pdf']);
+  static Future<File?> pickPdfFile({BuildContext? context}) async {
+    return pickFile(context: context, allowedExtensions: ['pdf']);
   }
 
   /// Pick an image file
-  static Future<File?> pickImageFile() async {
-    return pickFile(type: FileType.image);
+  static Future<File?> pickImageFile({BuildContext? context}) async {
+    return pickFile(context: context, type: FileType.image);
   }
 
   /// Get app documents directory

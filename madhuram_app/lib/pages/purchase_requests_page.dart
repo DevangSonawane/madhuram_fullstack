@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:intl/intl.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/app_theme.dart';
 import '../store/app_state.dart';
 import '../components/ui/components.dart';
 import '../components/layout/main_layout.dart';
+import '../services/file_service.dart';
 import '../utils/responsive.dart';
 
 /// Purchase request model
@@ -784,12 +784,12 @@ class _PurchaseRequestWizardContentState extends State<_PurchaseRequestWizardCon
   }
 
   Future<void> _pickBulkFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final file = await FileService.pickFileWithSource(
+      context: context,
       allowedExtensions: ['xlsx', 'xls', 'pdf'],
     );
-    if (result != null && result.files.single.name.isNotEmpty) {
-      setState(() => _bulkFileName = result.files.single.name);
+    if (file != null) {
+      setState(() => _bulkFileName = file.path.split(RegExp(r'[/\\]')).last);
     }
   }
 

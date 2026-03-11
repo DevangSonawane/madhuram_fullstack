@@ -474,7 +474,7 @@ class _MIRPageFullState extends State<MIRPageFull> {
                 text: 'Choose PDF file',
                 variant: ButtonVariant.outline,
                 onPressed: _isUploading ? null : () async {
-                  final file = await FileService.pickPdfFile();
+                  final file = await FileService.pickPdfFile(context: context);
                   if (!mounted) return;
                   setState(() => _selectedPdfFile = file);
                 },

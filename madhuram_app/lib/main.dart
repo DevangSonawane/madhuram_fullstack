@@ -29,7 +29,7 @@ import 'utils/animations.dart';
 import 'pages/login_page.dart';
 import 'pages/project_selection_page.dart';
 import 'pages/dashboard_page.dart';
-import 'pages/boq_page.dart';
+// import 'pages/boq_page.dart';
 import 'pages/profile_page.dart';
 // Inventory Module
 import 'pages/materials_page.dart';
@@ -64,7 +64,7 @@ import 'pages/mir_page_full.dart';
 import 'pages/itr_page_full.dart';
 
 // Project Management Module
-import 'pages/mas_page.dart';
+// import 'pages/mas_page.dart';
 import 'pages/billing_page.dart';
 
 // Reporting & Admin Module
@@ -80,8 +80,8 @@ final Map<String, Widget Function(BuildContext)> _appRoutes = {
   '/login': (context) => const LoginPage(),
   '/projects': (context) => const ProjectSelectionPage(),
   '/dashboard': (context) => const DashboardPage(),
-  '/boq': (context) => const BOQPage(),
-  '/mas': (context) => const MASPageFull(),
+  // '/boq': (context) => const BOQPage(),
+  // '/mas': (context) => const MASPageFull(),
   '/samples': (context) => const SamplesPageFull(),
   '/purchase-requests': (context) => const PurchaseRequestsPageFull(),
   '/vendor-comparison': (context) => const VendorComparisonPageFull(),

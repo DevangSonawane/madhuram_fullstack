@@ -209,7 +209,6 @@ class _DashboardPageState extends State<DashboardPage> {
       {'name': 'Samples', 'total': _metricTotal(stats['samples'])},
       {'name': 'MIRs', 'total': _metricTotal(stats['mirs'])},
       {'name': 'ITRs', 'total': _metricTotal(stats['itrs'])},
-      {'name': 'Users', 'total': _metricTotal(stats['users'])},
     ];
   }
 
@@ -510,13 +509,6 @@ class _DashboardPageState extends State<DashboardPage> {
         'icon': LucideIcons.clipboardCheck,
         'iconColor': Colors.orange,
         'delta': _metricLast30(stats['itrs']),
-      },
-      {
-        'title': 'Users',
-        'value': _metricTotal(stats['users']).toString(),
-        'icon': LucideIcons.users,
-        'iconColor': Colors.teal,
-        'delta': _metricLast30(stats['users']),
       },
     ];
 

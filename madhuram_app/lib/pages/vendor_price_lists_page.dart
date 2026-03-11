@@ -329,10 +329,18 @@ class _VendorPriceListsPageState extends State<VendorPriceListsPage> {
                     borderRadius: BorderRadius.circular(14),
                     gradient: LinearGradient(
                       colors: isDark
-                          ? [const Color(0xFF1C3557), const Color(0xFF0F213A)]
-                          : [const Color(0xFFE8F3FF), const Color(0xFFF6FAFF)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                          ? const [
+                              Color(0xFF0F172A),
+                              Color(0xFF0F172A),
+                              Color.fromRGBO(30, 41, 59, 0.70),
+                            ]
+                          : const [
+                              Color(0xFFFFFBEB),
+                              Color(0xFFFFF7ED),
+                              Colors.white,
+                            ],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
                     ),
                     border: Border.all(
                       color: isDark

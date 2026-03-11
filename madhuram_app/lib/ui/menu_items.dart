@@ -50,18 +50,18 @@ const menuItems = <MenuItem>[
     category: _projectManagement,
     icon: LucideIcons.briefcase,
   ),
-  MenuItem(
-    title: 'BOQ Management',
-    route: '/boq',
-    category: _projectManagement,
-    icon: LucideIcons.clipboardList,
-  ),
-  MenuItem(
-    title: 'MAS',
-    route: '/mas',
-    category: _projectManagement,
-    icon: Icons.check_box_outlined,
-  ),
+  // MenuItem(
+  //   title: 'BOQ Management',
+  //   route: '/boq',
+  //   category: _projectManagement,
+  //   icon: LucideIcons.clipboardList,
+  // ),
+  // MenuItem(
+  //   title: 'MAS',
+  //   route: '/mas',
+  //   category: _projectManagement,
+  //   icon: Icons.check_box_outlined,
+  // ),
 
   // Procurement
   MenuItem(
@@ -75,6 +75,12 @@ const menuItems = <MenuItem>[
     route: '/purchase-orders',
     category: _procurement,
     icon: LucideIcons.fileText,
+  ),
+  MenuItem(
+    title: 'Vendor Comparison',
+    route: '/vendor-comparison',
+    category: _procurement,
+    icon: LucideIcons.arrowRightLeft,
   ),
   MenuItem(
     title: 'Vendors',

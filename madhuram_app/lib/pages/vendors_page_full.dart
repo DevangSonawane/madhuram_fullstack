@@ -594,11 +594,17 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
           color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
         ),
         gradient: LinearGradient(
-          colors: [
-            const Color(0xFFECFEFF),
-            const Color(0xFFE0F2FE),
-            isDark ? AppTheme.darkCard : Colors.white,
-          ],
+          colors: isDark
+              ? const [
+                  Color(0xFF0F172A),
+                  Color(0xFF0F172A),
+                  Color.fromRGBO(30, 41, 59, 0.70),
+                ]
+              : const [
+                  Color(0xFFECFEFF),
+                  Color(0xFFE0F2FE),
+                  Colors.white,
+                ],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
         ),
@@ -1095,51 +1101,52 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
               ],
             ),
           ),
-          Expanded(
-            child: _isLoading
-                ? Center(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: isDark
-                                ? AppTheme.darkMutedForeground
-                                : AppTheme.lightMutedForeground,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          'Loading vendors...',
-                          style: TextStyle(
-                            color: isDark
-                                ? AppTheme.darkMutedForeground
-                                : AppTheme.lightMutedForeground,
-                          ),
-                        ),
-                      ],
+          if (_isLoading)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: isDark
+                            ? AppTheme.darkMutedForeground
+                            : AppTheme.lightMutedForeground,
+                      ),
                     ),
-                  )
-                : filtered.isEmpty
-                ? Center(
-                    child: Text(
-                      _error ?? 'No vendors found for current filters.',
+                    const SizedBox(width: 10),
+                    Text(
+                      'Loading vendors...',
                       style: TextStyle(
                         color: isDark
                             ? AppTheme.darkMutedForeground
                             : AppTheme.lightMutedForeground,
                       ),
                     ),
-                  )
-                : ListView.builder(
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) =>
-                        _buildVendorRow(filtered[index], isDark),
+                  ],
+                ),
+              ),
+            )
+          else if (filtered.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 12),
+              child: Center(
+                child: Text(
+                  _error ?? 'No vendors found for current filters.',
+                  style: TextStyle(
+                    color: isDark
+                        ? AppTheme.darkMutedForeground
+                        : AppTheme.lightMutedForeground,
                   ),
-          ),
+                ),
+              ),
+            )
+          else
+            ...filtered.map((vendor) => _buildVendorRow(vendor, isDark)),
         ],
       ),
     );
@@ -1237,40 +1244,44 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
             ],
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              MadButton(
-                text: 'Price Lists',
-                size: ButtonSize.sm,
-                variant: ButtonVariant.outline,
-                icon: LucideIcons.fileText,
-                onPressed: () => _openVendorPriceLists(vendor),
-              ),
-              MadButton(
-                text: 'View Latest',
-                size: ButtonSize.sm,
-                variant: ButtonVariant.outline,
-                icon: LucideIcons.eye,
-                onPressed: () => _openVendorPriceLists(vendor, openLatest: true),
-              ),
-              MadDropdownMenuButton(
-                items: [
-                  MadMenuItem(
-                    label: 'Edit',
-                    icon: LucideIcons.pencil,
-                    onTap: () => _openVendorDialog(vendor: vendor),
-                  ),
-                  MadMenuItem(
-                    label: 'Delete',
-                    icon: LucideIcons.trash2,
-                    destructive: true,
-                    onTap: () => _openDeleteDialog(vendor),
-                  ),
-                ],
-              ),
-            ],
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                MadButton(
+                  text: 'Price Lists',
+                  size: ButtonSize.sm,
+                  variant: ButtonVariant.outline,
+                  icon: LucideIcons.fileText,
+                  onPressed: () => _openVendorPriceLists(vendor),
+                ),
+                const SizedBox(width: 8),
+                MadButton(
+                  text: 'View Latest',
+                  size: ButtonSize.sm,
+                  variant: ButtonVariant.outline,
+                  icon: LucideIcons.eye,
+                  onPressed: () =>
+                      _openVendorPriceLists(vendor, openLatest: true),
+                ),
+                const SizedBox(width: 8),
+                MadDropdownMenuButton(
+                  items: [
+                    MadMenuItem(
+                      label: 'Edit',
+                      icon: LucideIcons.pencil,
+                      onTap: () => _openVendorDialog(vendor: vendor),
+                    ),
+                    MadMenuItem(
+                      label: 'Delete',
+                      icon: LucideIcons.trash2,
+                      destructive: true,
+                      onTap: () => _openDeleteDialog(vendor),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1323,19 +1334,22 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
       );
     }
 
-    return ListView.separated(
-      itemCount: filtered.length,
-      itemBuilder: (context, index) =>
-          _buildCompactVendorCard(filtered[index], isDark),
-      separatorBuilder: (_, index) => const SizedBox(height: 10),
+    return Column(
+      children: filtered
+          .map(
+            (vendor) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _buildCompactVendorCard(vendor, isDark),
+            ),
+          )
+          .toList(),
     );
   }
 
   Widget _buildDirectoryCard(
     bool isDark,
-    Responsive responsive, {
-    required bool fillHeight,
-  }) {
+    Responsive responsive,
+  ) {
     final isMobile = responsive.isMobile;
 
     return MadCard(
@@ -1432,17 +1446,9 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
             ),
             const SizedBox(height: 14),
             if (responsive.isMobile || responsive.isTablet)
-              SizedBox(
-                height: responsive.isMobile ? 520 : 560,
-                child: _buildCompactDirectory(isDark),
-              )
-            else if (fillHeight)
-              Expanded(child: _buildTable(isDark))
+              _buildCompactDirectory(isDark)
             else
-              SizedBox(
-                height: 500,
-                child: _buildTable(isDark),
-              ),
+              _buildTable(isDark),
           ],
         ),
       ),
@@ -1465,43 +1471,24 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
           WidgetsBinding.instance.addPostFrameCallback((_) => _loadVendors());
         }
 
-        final isCompact = responsive.isMobile || responsive.isTablet;
         return ProtectedRoute(
           title: 'Vendors',
           route: '/vendors',
-          child: isCompact
-              ? SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHero(isDark, responsive.isMobile),
-                      const SizedBox(height: 16),
-                      _buildStatsRow(responsive),
-                      const SizedBox(height: 16),
-                      _buildDirectoryCard(
-                        isDark,
-                        responsive,
-                        fillHeight: false,
-                      ),
-                    ],
-                  ),
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildHero(isDark, responsive.isMobile),
-                    const SizedBox(height: 16),
-                    _buildStatsRow(responsive),
-                    const SizedBox(height: 16),
-                    Expanded(
-                      child: _buildDirectoryCard(
-                        isDark,
-                        responsive,
-                        fillHeight: true,
-                      ),
-                    ),
-                  ],
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHero(isDark, responsive.isMobile),
+                const SizedBox(height: 16),
+                _buildStatsRow(responsive),
+                const SizedBox(height: 16),
+                _buildDirectoryCard(
+                  isDark,
+                  responsive,
                 ),
+              ],
+            ),
+          ),
         );
       },
     );

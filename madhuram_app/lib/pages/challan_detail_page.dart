@@ -1,5 +1,3 @@
-import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -8,6 +6,7 @@ import '../components/ui/components.dart';
 import '../models/challan.dart';
 import '../models/purchase_order.dart';
 import '../services/api_client.dart';
+import '../services/file_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
 
@@ -181,11 +180,9 @@ class _ChallanDetailPageState extends State<ChallanDetailPage> {
   }
 
   Future<void> _uploadAttachment() async {
-    final result = await FilePicker.platform.pickFiles(withData: false);
-    if (result == null || result.files.isEmpty) return;
-    final path = result.files.first.path;
-    if (path == null) return;
-    final res = await ApiClient.uploadChallanFile(File(path));
+    final file = await FileService.pickFileWithSource(context: context);
+    if (file == null) return;
+    final res = await ApiClient.uploadChallanFile(file);
     if (!mounted) return;
     if (res['success'] == true) {
       final data = res['data'] as Map?;

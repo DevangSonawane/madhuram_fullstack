@@ -328,21 +328,33 @@ class _ProjectsPageState extends State<ProjectsPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 10),
             Text(client, style: TextStyle(fontSize: 13, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground), overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 8),
-            Row(
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                if (hasWo) Icon(LucideIcons.fileText, size: 16, color: AppTheme.primaryColor),
-                if (hasWo) const SizedBox(width: 4),
+                if (hasWo)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(LucideIcons.fileText, size: 16, color: AppTheme.primaryColor),
+                      const SizedBox(width: 4),
+                    ],
+                  ),
                 if (prPo > 0) MadBadge(text: 'PR/PO $prPo', variant: BadgeVariant.secondary),
-                const SizedBox(width: 8),
-                if (productDuration.isNotEmpty) Text('Duration: $productDuration', style: TextStyle(fontSize: 12, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
+                if (productDuration.isNotEmpty)
+                  Text(
+                    'Duration: $productDuration',
+                    style: TextStyle(fontSize: 12, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground),
+                  ),
               ],
             ),
             if (created.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.only(top: 10),
                 child: Text('Created: $created', style: TextStyle(fontSize: 11, color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground)),
               ),
           ],

@@ -1148,7 +1148,7 @@ class _BOQPageState extends State<BOQPage> {
     );
 
     try {
-      final result = await BOQExtractor.pickAndExtract();
+      final result = await BOQExtractor.pickAndExtract(context);
       
       if (!mounted) return;
       Navigator.pop(context); // Close loading dialog

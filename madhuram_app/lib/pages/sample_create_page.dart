@@ -1,11 +1,10 @@
-import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../components/layout/main_layout.dart';
 import '../components/ui/components.dart';
 import '../services/api_client.dart';
+import '../services/file_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
 
@@ -60,15 +59,7 @@ class _SampleCreatePageState extends State<SampleCreatePage> {
   }
 
   Future<void> _uploadSampleFiles() async {
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      withData: false,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final files = <File>[];
-    for (final f in result.files) {
-      if (f.path != null) files.add(File(f.path!));
-    }
+    final files = await FileService.pickMultipleFilesWithSource(context: context);
     if (files.isEmpty) return;
 
     final res = await ApiClient.uploadSampleFiles(files);

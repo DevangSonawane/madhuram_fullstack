@@ -1,12 +1,12 @@
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../components/layout/main_layout.dart';
 import '../components/ui/components.dart';
 import '../services/api_client.dart';
+import '../services/file_service.dart';
 import '../theme/app_theme.dart';
 
 class VendorPriceListCreatePage extends StatefulWidget {
@@ -27,8 +27,8 @@ class VendorPriceListCreatePage extends StatefulWidget {
 class _VendorPriceListCreatePageState extends State<VendorPriceListCreatePage> {
   static const double _mmPerInch = 25.4;
 
-  final TextEditingController _filenameController = TextEditingController();
-  final TextEditingController _filePathController = TextEditingController();
+  String _uploadedFilename = '';
+  String _uploadedFilePath = '';
 
   bool _uploading = false;
   bool _creating = false;
@@ -52,8 +52,6 @@ class _VendorPriceListCreatePageState extends State<VendorPriceListCreatePage> {
 
   @override
   void dispose() {
-    _filenameController.dispose();
-    _filePathController.dispose();
     super.dispose();
   }
 
@@ -89,13 +87,8 @@ class _VendorPriceListCreatePageState extends State<VendorPriceListCreatePage> {
   }
 
   Future<void> _pickAndUploadFile() async {
-    final picked = await FilePicker.platform.pickFiles(withData: false);
-    if (picked == null || picked.files.isEmpty) return;
-
-    final filePath = picked.files.first.path;
-    if (filePath == null || filePath.isEmpty) return;
-
-    final file = File(filePath);
+    final file = await FileService.pickFileWithSource(context: context);
+    if (file == null) return;
     setState(() {
       _selectedFile = file;
       _uploading = true;
@@ -111,8 +104,8 @@ class _VendorPriceListCreatePageState extends State<VendorPriceListCreatePage> {
       final resolvedPath = _resolveFilePath(resultData) ?? '';
       final resolvedName = (resultData?['filename'] ?? '').toString();
       setState(() {
-        _filenameController.text = resolvedName;
-        _filePathController.text = resolvedPath;
+        _uploadedFilename = resolvedName;
+        _uploadedFilePath = resolvedPath;
       });
       showToast(context, 'Upload successful');
     } else {
@@ -159,6 +152,26 @@ class _VendorPriceListCreatePageState extends State<VendorPriceListCreatePage> {
   String _formatSizeValue(double value) {
     final fixed = value.toStringAsFixed(4);
     return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
+  String _formatPriceValue(double value) {
+    final fixed = value.toStringAsFixed(2);
+    return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
+  void _recalculateNetPrice(
+    int index, {
+    String? nextPricePerPiece,
+    String? nextDiscountPrice,
+  }) {
+    final row = _items[index];
+    final priceRaw = (nextPricePerPiece ?? row['price_per_pic'] ?? '').trim();
+    final discountRaw =
+        (nextDiscountPrice ?? row['discount_price'] ?? '').trim();
+    final price = double.tryParse(priceRaw);
+    final discount = double.tryParse(discountRaw) ?? 0;
+    final netPrice = price == null ? '' : _formatPriceValue(price - discount);
+    _updateItem(index, 'net_price', netPrice);
   }
 
   String _inferUnit(Map<String, String> row) {
@@ -234,10 +247,10 @@ class _VendorPriceListCreatePageState extends State<VendorPriceListCreatePage> {
       'vendor_id': int.tryParse(widget.vendorId) ?? widget.vendorId,
       'version_name': versionName,
       'status': 'active',
-      if (_filenameController.text.trim().isNotEmpty)
-        'filename': _filenameController.text.trim(),
-      if (_filePathController.text.trim().isNotEmpty)
-        'file_path': _filePathController.text.trim(),
+      if (_uploadedFilename.trim().isNotEmpty)
+        'filename': _uploadedFilename.trim(),
+      if (_uploadedFilePath.trim().isNotEmpty)
+        'file_path': _uploadedFilePath.trim(),
       'items': _items,
     };
 
@@ -270,7 +283,10 @@ class _VendorPriceListCreatePageState extends State<VendorPriceListCreatePage> {
       String key,
       String label, {
       TextInputType keyboardType = TextInputType.text,
+      bool readOnly = false,
+      ValueChanged<String>? onFieldChanged,
     }) {
+      final value = row[key] ?? '';
       return SizedBox(
         width: 240,
         child: Column(
@@ -282,10 +298,21 @@ class _VendorPriceListCreatePageState extends State<VendorPriceListCreatePage> {
             ),
             const SizedBox(height: 8),
             TextFormField(
-              key: ValueKey('item-$index-$key'),
-              initialValue: row[key] ?? '',
+              key: ValueKey(
+                readOnly ? 'item-$index-$key-$value' : 'item-$index-$key',
+              ),
+              initialValue: value,
               keyboardType: keyboardType,
-              onChanged: (value) => _updateItem(index, key, value),
+              readOnly: readOnly,
+              onChanged: readOnly
+                  ? null
+                  : (value) {
+                      if (onFieldChanged != null) {
+                        onFieldChanged(value);
+                        return;
+                      }
+                      _updateItem(index, key, value);
+                    },
               decoration: const InputDecoration(
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(
@@ -412,16 +439,25 @@ class _VendorPriceListCreatePageState extends State<VendorPriceListCreatePage> {
                   'price_per_pic',
                   'Price Per Piece',
                   keyboardType: TextInputType.number,
+                  onFieldChanged: (value) {
+                    _updateItem(index, 'price_per_pic', value);
+                    _recalculateNetPrice(index, nextPricePerPiece: value);
+                  },
                 ),
                 field(
                   'discount_price',
                   'Discount Price',
                   keyboardType: TextInputType.number,
+                  onFieldChanged: (value) {
+                    _updateItem(index, 'discount_price', value);
+                    _recalculateNetPrice(index, nextDiscountPrice: value);
+                  },
                 ),
                 field(
                   'net_price',
                   'Net Price',
                   keyboardType: TextInputType.number,
+                  readOnly: true,
                 ),
               ],
             ),
@@ -522,27 +558,6 @@ class _VendorPriceListCreatePageState extends State<VendorPriceListCreatePage> {
                                         ? AppTheme.darkMutedForeground
                                         : AppTheme.lightMutedForeground,
                                   ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 10,
-                            children: [
-                              SizedBox(
-                                width: 320,
-                                child: MadInput(
-                                  labelText: 'File Name',
-                                  controller: _filenameController,
-                                ),
-                              ),
-                              SizedBox(
-                                width: 520,
-                                child: MadInput(
-                                  labelText: 'File Path',
-                                  controller: _filePathController,
                                 ),
                               ),
                             ],
