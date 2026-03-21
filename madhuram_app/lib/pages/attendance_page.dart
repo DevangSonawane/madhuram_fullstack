@@ -6,8 +6,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:flutter_redux/flutter_redux.dart';
 import '../components/layout/main_layout.dart';
 import '../components/ui/components.dart';
+import '../services/api_client.dart';
+import '../store/app_state.dart';
 import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
 
@@ -25,8 +28,18 @@ class _AttendancePageState extends State<AttendancePage> {
   Position? _position;
   String? _locationName;
   DateTime? _locationCapturedAt;
+  String? _userName;
+  String? _userId;
+  String? _userPhone;
+  String? _projectId;
   bool _locating = false;
   bool _submitting = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncUserContext();
+  }
 
   Future<void> _captureSelfie() async {
     final photo = await _picker.pickImage(
@@ -50,6 +63,7 @@ class _AttendancePageState extends State<AttendancePage> {
 
   Future<void> _captureLocation() async {
     if (_locating) return;
+    _syncUserContext(force: true);
     setState(() => _locating = true);
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -103,6 +117,79 @@ class _AttendancePageState extends State<AttendancePage> {
     }
   }
 
+  void _syncUserContext({bool force = false}) {
+    final store = StoreProvider.of<AppState>(context);
+    final user = store.state.auth.user;
+    final project = store.state.project.selectedProject;
+    final resolvedName = _resolveUserName(user);
+    final resolvedUserId = _resolveUserId(user);
+    final resolvedPhone = _resolveUserPhone(user);
+    final resolvedProjectId = _resolveProjectId(project);
+    if (!force &&
+        resolvedName == _userName &&
+        resolvedUserId == _userId &&
+        resolvedPhone == _userPhone &&
+        resolvedProjectId == _projectId) {
+      return;
+    }
+    setState(() {
+      _userName = resolvedName;
+      _userId = resolvedUserId;
+      _userPhone = resolvedPhone;
+      _projectId = resolvedProjectId;
+    });
+  }
+
+  String? _resolveUserId(Map<String, dynamic>? user) {
+    return user?['user_id']?.toString() ??
+        user?['id']?.toString() ??
+        user?['uid']?.toString();
+  }
+
+  String? _resolveUserName(Map<String, dynamic>? user) {
+    final name =
+        user?['name']?.toString() ?? user?['user_name']?.toString();
+    if (name == null) return null;
+    final trimmed = name.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  String? _resolveUserPhone(Map<String, dynamic>? user) {
+    final phone =
+        user?['phone_number']?.toString() ?? user?['phone']?.toString();
+    if (phone == null) return null;
+    final trimmed = phone.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  String? _resolveProjectId(Map<String, dynamic>? project) {
+    return project?['id']?.toString() ??
+        project?['project_id']?.toString();
+  }
+
+  String? _resolveFilePath(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      final direct = data['filePath'] ??
+          data['file_path'] ??
+          data['path'] ??
+          data['url'];
+      if (direct != null && direct.toString().trim().isNotEmpty) {
+        return direct.toString();
+      }
+      final nested = data['data'];
+      if (nested is Map<String, dynamic>) {
+        final nestedPath = nested['filePath'] ??
+            nested['file_path'] ??
+            nested['path'] ??
+            nested['url'];
+        if (nestedPath != null && nestedPath.toString().trim().isNotEmpty) {
+          return nestedPath.toString();
+        }
+      }
+    }
+    return null;
+  }
+
   Future<void> _resolveLocationName(Position position) async {
     try {
       final placemarks = await placemarkFromCoordinates(
@@ -136,6 +223,30 @@ class _AttendancePageState extends State<AttendancePage> {
   Future<void> _submitAttendance() async {
     if (_submitting) return;
 
+    final shouldSubmit = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Submit Attendance?'),
+          content: const Text(
+            'This will upload photos and send your attendance to admin.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Submit'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldSubmit != true) return;
+
     if (_selfie == null || _siteImage == null) {
       showToast(
         context,
@@ -155,9 +266,116 @@ class _AttendancePageState extends State<AttendancePage> {
 
     setState(() => _submitting = true);
     try {
-      await Future<void>.delayed(const Duration(milliseconds: 600));
+      final store = StoreProvider.of<AppState>(context);
+      final user = store.state.auth.user;
+      final project = store.state.project.selectedProject;
+      final userId = _resolveUserId(user);
+      final userName = _resolveUserName(user);
+      final userPhone = _resolveUserPhone(user);
+      final projectId = _resolveProjectId(project);
+
+      final selfieUpload = await ApiClient.uploadAttendanceImage(
+        _selfie!,
+        userId: userId,
+        userName: userName,
+      );
+      if (selfieUpload['success'] != true) {
+        showToast(
+          context,
+          selfieUpload['error']?.toString() ?? 'Unable to upload selfie.',
+          variant: ToastVariant.error,
+        );
+        return;
+      }
+      final selfiePath = _resolveFilePath(selfieUpload['data']);
+      if (selfiePath == null || selfiePath.trim().isEmpty) {
+        showToast(
+          context,
+          'Selfie upload did not return a file path.',
+          variant: ToastVariant.error,
+        );
+        return;
+      }
+
+      final siteUpload = await ApiClient.uploadAttendanceImage(
+        _siteImage!,
+        userId: userId,
+        userName: userName,
+      );
+      if (siteUpload['success'] != true) {
+        showToast(
+          context,
+          siteUpload['error']?.toString() ?? 'Unable to upload site photo.',
+          variant: ToastVariant.error,
+        );
+        return;
+      }
+      final sitePath = _resolveFilePath(siteUpload['data']);
+      if (sitePath == null || sitePath.trim().isEmpty) {
+        showToast(
+          context,
+          'Site photo upload did not return a file path.',
+          variant: ToastVariant.error,
+        );
+        return;
+      }
+
+      final now = DateTime.now();
+      final payload = <String, dynamic>{
+        'photo_selfie': selfiePath,
+        'photo_site': sitePath,
+        'location': _locationName,
+        'latitude': _position?.latitude,
+        'longitude': _position?.longitude,
+        'user_name': userName,
+        'phone_number': userPhone,
+        'date': DateFormat('yyyy-MM-dd').format(now),
+        'day': DateFormat('EEEE').format(now),
+        'project_id': projectId == null ? null : int.tryParse(projectId),
+        'user_id': userId,
+      };
+
+      payload.removeWhere(
+        (_, value) => value == null || value.toString().trim().isEmpty,
+      );
+
+      final createResult = await ApiClient.createAttendance(payload);
+      if (createResult['success'] == true) {
+        if (mounted) {
+          await showDialog<void>(
+            context: context,
+            builder: (dialogContext) {
+              return AlertDialog(
+                title: const Text('Attendance Submitted'),
+                content: const Text('Attendance submitted successfully.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('OK'),
+                  ),
+                ],
+              );
+            },
+          );
+        }
+        if (mounted) {
+          setState(() {
+            _selfie = null;
+            _siteImage = null;
+            _position = null;
+            _locationName = null;
+            _locationCapturedAt = null;
+          });
+        }
+      } else {
+        showToast(
+          context,
+          createResult['error']?.toString() ??
+              'Failed to create attendance record.',
+          variant: ToastVariant.error,
+        );
+      }
       if (!mounted) return;
-      showToast(context, 'Attendance captured. Pending admin sync.');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -254,6 +472,7 @@ class _AttendancePageState extends State<AttendancePage> {
         ? '-'
         : DateFormat('dd MMM yyyy, hh:mm a').format(_locationCapturedAt!);
     final locationLabel = _locationName ?? '-';
+    final userLabel = _userName ?? '-';
 
     return MadCard(
       child: Padding(
@@ -303,6 +522,11 @@ class _AttendancePageState extends State<AttendancePage> {
                   const SizedBox(height: 4),
                   Text(
                     'Location: $locationLabel',
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Name: $userLabel',
                     style: TextStyle(color: muted, fontSize: 12),
                   ),
                   const SizedBox(height: 4),

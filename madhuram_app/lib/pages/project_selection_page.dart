@@ -1087,7 +1087,11 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
         final parsed = jsonDecode(rawProjectList);
         if (parsed is List) values = parsed;
       } catch (_) {
-        values = const [];
+        values = rawProjectList
+            .split(',')
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toList();
       }
     }
 

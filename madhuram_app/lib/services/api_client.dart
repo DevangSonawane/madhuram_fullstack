@@ -306,6 +306,13 @@ class ApiClient {
     return _handleResponse(res);
   }
 
+  static Future<Map<String, dynamic>> getUserById(String userId) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/auth/users/$userId');
+    final res = await _get(uri, headers: _authHeaders(token));
+    return _handleResponse(res);
+  }
+
   static Future<Map<String, dynamic>> updateUser(
     String userId,
     Map<String, dynamic> data,
@@ -1258,6 +1265,99 @@ class ApiClient {
       fields,
       files: {'file': file},
     );
+  }
+
+  // ============================================================================
+  // Attendance
+  // ============================================================================
+  static Future<Map<String, dynamic>> uploadAttendanceImage(
+    File file, {
+    String? userId,
+    String? userName,
+  }) {
+    final fields = <String, String>{};
+    if (userId != null && userId.trim().isNotEmpty) {
+      fields['user_id'] = userId.trim();
+    }
+    if (userName != null && userName.trim().isNotEmpty) {
+      fields['user_name'] = userName.trim();
+    }
+    return _multipartRequest(
+      'POST',
+      '/api/attendance/upload',
+      fields,
+      files: {'file': file},
+    );
+  }
+
+  static Future<Map<String, dynamic>> createAttendance(
+    Map<String, dynamic> data,
+  ) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/attendance');
+    final res = await _post(
+      uri,
+      headers: _authHeaders(token),
+      body: jsonEncode(data),
+    );
+    return _handleResponse(res);
+  }
+
+  static Future<Map<String, dynamic>> getAllAttendance() async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/attendance');
+    final res = await _get(uri, headers: _authHeaders(token));
+    return _handleResponse(res);
+  }
+
+  static Future<Map<String, dynamic>> getAttendanceByProject(
+    String projectId,
+  ) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/attendance/project/$projectId');
+    final res = await _get(uri, headers: _authHeaders(token));
+    return _handleResponse(res);
+  }
+
+  static Future<Map<String, dynamic>> getAttendanceById(String id) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/attendance/$id');
+    final res = await _get(uri, headers: _authHeaders(token));
+    return _handleResponse(res);
+  }
+
+  static Future<Map<String, dynamic>> updateAttendance(
+    String id,
+    Map<String, dynamic> data,
+  ) async {
+    final token = await _getToken();
+    final uri = Uri.parse('$baseUrl/api/attendance/$id');
+    final res = await _put(
+      uri,
+      headers: _authHeaders(token),
+      body: jsonEncode(data),
+    );
+    return _handleResponse(res);
+  }
+
+  static Future<Map<String, dynamic>> deleteAttendance(
+    String id, {
+    String? userId,
+    String? userName,
+  }) async {
+    final token = await _getToken();
+    final queryParams = <String, String>{};
+    if (userId != null && userId.trim().isNotEmpty) {
+      queryParams['user_id'] = userId.trim();
+    }
+    if (userName != null && userName.trim().isNotEmpty) {
+      queryParams['user_name'] = userName.trim();
+    }
+    final uri = Uri.parse('$baseUrl/api/attendance/$id').replace(
+      queryParameters: queryParams.isEmpty ? null : queryParams,
+    );
+    final res = await _delete(uri, headers: _authHeaders(token));
+    return _handleResponse(res);
   }
 
   /// Update ITR approval/status workflow

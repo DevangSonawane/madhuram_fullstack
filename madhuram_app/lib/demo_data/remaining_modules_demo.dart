@@ -61,11 +61,5 @@ class ReturnsDemo {
 class BillingDemo {
   BillingDemo._();
 
-  static List<Map<String, dynamic>> get bills => [
-    {'bill_id': '1', 'invoice_no': 'INV-2024-001', 'amount': '₹1,50,000', 'date': '2024-01-25', 'status': 'Pending', 'vendor': 'ABC Suppliers Pvt Ltd'},
-    {'bill_id': '2', 'invoice_no': 'INV-2024-002', 'amount': '₹2,80,000', 'date': '2024-01-28', 'status': 'Paid', 'vendor': 'Metro Steel Works'},
-    {'bill_id': '3', 'invoice_no': 'INV-2024-003', 'amount': '₹75,000', 'date': '2024-02-01', 'status': 'Overdue', 'vendor': 'Reliable Electricals'},
-    {'bill_id': '4', 'invoice_no': 'INV-2024-004', 'amount': '₹45,000', 'date': '2024-02-05', 'status': 'Pending', 'vendor': 'Sunrise Plumbing Solutions'},
-    {'bill_id': '5', 'invoice_no': 'INV-2024-005', 'amount': '₹1,25,000', 'date': '2024-02-10', 'status': 'Paid', 'vendor': 'XYZ Traders'},
-  ];
+  static List<Map<String, dynamic>> get bills => [];
 }
