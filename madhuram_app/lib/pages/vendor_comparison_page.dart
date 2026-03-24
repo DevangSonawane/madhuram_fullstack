@@ -205,6 +205,8 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
         return ProtectedRoute(
           title: 'Price List Comparison',
           route: '/vendor-comparison',
+          showSidebar: false,
+          requireProject: false,
           child: ListView(
             children: [
               _buildHero(isDark),
@@ -266,6 +268,20 @@ class _VendorComparisonPageFullState extends State<VendorComparisonPageFull> {
             ),
           ),
           const SizedBox(width: 12),
+          MadButton(
+            icon: LucideIcons.arrowLeft,
+            text: 'Back',
+            variant: ButtonVariant.outline,
+            size: ButtonSize.sm,
+            onPressed: () {
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              } else {
+                Navigator.pushNamed(context, '/projects');
+              }
+            },
+          ),
+          const SizedBox(width: 8),
           MadButton(
             icon: LucideIcons.refreshCw,
             text: 'Refresh',

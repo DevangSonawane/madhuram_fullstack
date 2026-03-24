@@ -24,6 +24,9 @@ class _AddInventoryPageState extends State<AddInventoryPage> {
   final _nameController = TextEditingController();
   final _quantityController = TextEditingController();
   final _priceController = TextEditingController();
+  final _unitController = TextEditingController();
+  final _widthController = TextEditingController();
+  final _heightController = TextEditingController();
 
   String? _activeProjectId;
   bool _stockIn = true;
@@ -46,6 +49,9 @@ class _AddInventoryPageState extends State<AddInventoryPage> {
     _nameController.dispose();
     _quantityController.dispose();
     _priceController.dispose();
+    _unitController.dispose();
+    _widthController.dispose();
+    _heightController.dispose();
     super.dispose();
   }
 
@@ -118,61 +124,213 @@ class _AddInventoryPageState extends State<AddInventoryPage> {
     }
   }
 
-  Future<void> _createInventory() async {
+  Future<bool> _createInventory() async {
     final projectId = _activeProjectId;
     if (projectId == null || projectId.isEmpty || projectId == 'all') {
       showToast(context, 'Select a project first');
-      return;
+      return false;
     }
 
     if (_brandController.text.trim().isEmpty ||
         _nameController.text.trim().isEmpty) {
       showToast(context, 'Brand and item name are required');
-      return;
+      return false;
     }
 
     setState(() => _saving = true);
 
     try {
       final result = await ApiClient.createInventory({
-        'project_id': int.tryParse(projectId) ?? projectId,
         'brand': _brandController.text.trim(),
         'name': _nameController.text.trim(),
         'quantity': double.tryParse(_quantityController.text.trim()) ?? 0,
         'price': double.tryParse(_priceController.text.trim()) ?? 0,
+        'units': _unitController.text.trim(),
+        'width': double.tryParse(_widthController.text.trim()),
+        'height': double.tryParse(_heightController.text.trim()),
         'stockin': _stockIn,
         'billing': _billing,
       });
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       if (result['success'] == true) {
         _brandController.clear();
         _nameController.clear();
         _quantityController.clear();
         _priceController.clear();
+        _unitController.clear();
+        _widthController.clear();
+        _heightController.clear();
         setState(() {
           _stockIn = true;
           _billing = false;
         });
         await _loadItems();
-        if (!mounted) return;
+        if (!mounted) return false;
         showToast(context, 'Inventory item created successfully.');
+        return true;
       } else {
         showToast(
           context,
           (result['error'] ?? 'Failed to create inventory item.').toString(),
         );
+        return false;
       }
     } catch (_) {
       if (mounted) {
         showToast(context, 'Failed to create inventory item.');
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() => _saving = false);
       }
     }
+  }
+
+  Future<void> _openCreateDialog() async {
+    if (_activeProjectId == null ||
+        _activeProjectId!.isEmpty ||
+        _activeProjectId == 'all') {
+      showToast(context, 'Select a project first');
+      return;
+    }
+
+    await MadDialog.show<void>(
+      context: context,
+      title: 'Add Inventory Item',
+      showCloseButton: true,
+      content: StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              MadInput(
+                controller: _brandController,
+                labelText: 'Brand',
+                hintText: 'e.g. ACC',
+              ),
+              const SizedBox(height: 12),
+              MadInput(
+                controller: _nameController,
+                labelText: 'Item Name',
+                hintText: 'e.g. Cement Bag',
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: MadInput(
+                      controller: _quantityController,
+                      labelText: 'Quantity',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: MadInput(
+                      controller: _priceController,
+                      labelText: 'Price',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              MadInput(
+                controller: _unitController,
+                labelText: 'Unit',
+                hintText: 'e.g. bags, kg',
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: MadInput(
+                      controller: _widthController,
+                      labelText: 'Width',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: MadInput(
+                      controller: _heightController,
+                      labelText: 'Height',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: MadSelect<String>(
+                      labelText: 'Stock Status',
+                      value: _stockIn ? 'in' : 'out',
+                      options: const [
+                        MadSelectOption(value: 'in', label: 'In Stock'),
+                        MadSelectOption(value: 'out', label: 'Out of Stock'),
+                      ],
+                      onChanged: (value) =>
+                          setDialogState(() => _stockIn = value == 'in'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: MadSelect<String>(
+                      labelText: 'Billing Status',
+                      value: _billing ? 'done' : 'pending',
+                      options: const [
+                        MadSelectOption(value: 'done', label: 'Billed'),
+                        MadSelectOption(value: 'pending', label: 'Pending'),
+                      ],
+                      onChanged: (value) =>
+                          setDialogState(() => _billing = value == 'done'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  MadButton(
+                    text: 'Cancel',
+                    variant: ButtonVariant.outline,
+                    disabled: _saving,
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                  ),
+                  const SizedBox(width: 8),
+                  MadButton(
+                    text: _saving ? 'Saving...' : 'Add Item',
+                    loading: _saving,
+                    disabled: _saving,
+                    onPressed: () async {
+                      final success = await _createInventory();
+                      if (success && dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _toggleStock(InventoryItem item, bool value) async {
@@ -261,6 +419,13 @@ class _AddInventoryPageState extends State<AddInventoryPage> {
       final priceController = TextEditingController(
         text: current.price.toString(),
       );
+      final unitController = TextEditingController(text: current.unit);
+      final widthController = TextEditingController(
+        text: current.width == 0 ? '' : current.width.toString(),
+      );
+      final heightController = TextEditingController(
+        text: current.height == 0 ? '' : current.height.toString(),
+      );
       var stockIn = current.stockIn;
       var billing = current.billing;
       var saving = false;
@@ -303,6 +468,36 @@ class _AddInventoryPageState extends State<AddInventoryPage> {
                       child: MadInput(
                         controller: priceController,
                         labelText: 'Price',
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                MadInput(
+                  controller: unitController,
+                  labelText: 'Unit',
+                  hintText: 'e.g. bags, kg',
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: MadInput(
+                        controller: widthController,
+                        labelText: 'Width',
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: MadInput(
+                        controller: heightController,
+                        labelText: 'Height',
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
@@ -365,6 +560,11 @@ class _AddInventoryPageState extends State<AddInventoryPage> {
                               0,
                           'price':
                               double.tryParse(priceController.text.trim()) ?? 0,
+                          'units': unitController.text.trim(),
+                          'width':
+                              double.tryParse(widthController.text.trim()),
+                          'height':
+                              double.tryParse(heightController.text.trim()),
                           'stockin': stockIn,
                           'billing': billing,
                         });
@@ -403,6 +603,9 @@ class _AddInventoryPageState extends State<AddInventoryPage> {
       nameController.dispose();
       quantityController.dispose();
       priceController.dispose();
+      unitController.dispose();
+      widthController.dispose();
+      heightController.dispose();
     } catch (_) {
       if (mounted) {
         showToast(context, 'Failed to load inventory item.');
@@ -519,6 +722,7 @@ class _AddInventoryPageState extends State<AddInventoryPage> {
           headerLeadingIcon: LucideIcons.arrowLeft,
           onHeaderLeadingPressed: () =>
               Navigator.pushReplacementNamed(context, '/projects'),
+          requireProject: false,
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -722,7 +926,7 @@ class _AddInventoryPageState extends State<AddInventoryPage> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Mapped fields: project_id, brand, quantity, name, price, stockin, billing.',
+              'Mapped fields: project_id, brand, quantity, name, price, unit, width, height, stockin, billing.',
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(context).brightness == Brightness.dark
@@ -755,76 +959,16 @@ class _AddInventoryPageState extends State<AddInventoryPage> {
                 _loadItems();
               },
             ),
-            const SizedBox(height: 12),
-            MadInput(
-              controller: _brandController,
-              labelText: 'Brand',
-              hintText: 'e.g. ACC',
-            ),
-            const SizedBox(height: 12),
-            MadInput(
-              controller: _nameController,
-              labelText: 'Item Name',
-              hintText: 'e.g. Cement Bag',
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: MadInput(
-                    controller: _quantityController,
-                    labelText: 'Quantity',
-                    hintText: '0',
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: MadInput(
-                    controller: _priceController,
-                    labelText: 'Price',
-                    hintText: '0.00',
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            MadSelect<String>(
-              labelText: 'Stock Status',
-              value: _stockIn ? 'in' : 'out',
-              options: const [
-                MadSelectOption(value: 'in', label: 'In Stock'),
-                MadSelectOption(value: 'out', label: 'Out of Stock'),
-              ],
-              onChanged: (value) => setState(() => _stockIn = value == 'in'),
-            ),
-            const SizedBox(height: 12),
-            MadSelect<String>(
-              labelText: 'Billing Status',
-              value: _billing ? 'done' : 'pending',
-              options: const [
-                MadSelectOption(value: 'done', label: 'Billed'),
-                MadSelectOption(value: 'pending', label: 'Pending'),
-              ],
-              onChanged: (value) => setState(() => _billing = value == 'done'),
-            ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: MadButton(
-                text: _saving ? 'Saving...' : '+ Add inventory',
-                loading: _saving,
+                text: '+ Add inventory',
                 disabled:
-                    _saving ||
                     _activeProjectId == null ||
                     _activeProjectId!.isEmpty ||
                     _activeProjectId == 'all',
-                onPressed: _saving ? null : _createInventory,
+                onPressed: _openCreateDialog,
               ),
             ),
           ],

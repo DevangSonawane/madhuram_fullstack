@@ -253,10 +253,26 @@ class ApiClient {
     );
     final result = await _handleResponse(res);
     if (result['success'] == true) {
-      final Map<String, dynamic> data = result['data'] as Map<String, dynamic>;
+      final data = result['data'];
+      if (data is! Map<String, dynamic>) {
+        return {
+          'success': false,
+          'error': 'Invalid login response from server.',
+        };
+      }
+      final token =
+          data['token'] ?? data['access_token'] ?? data['jwt'] ?? '';
+      if (token == null || token.toString().isEmpty) {
+        return {
+          'success': false,
+          'error': data['message']?.toString() ?? 'Login failed.',
+        };
+      }
+      final rawUser = data['user'];
+      final userMap = rawUser is Map<String, dynamic> ? rawUser : data;
       final user = {
-        ...((data['user'] ?? {}) as Map<String, dynamic>),
-        'token': data['token'],
+        ...userMap,
+        'token': token,
       };
       await AuthStorage.setUser(user);
     }
@@ -267,10 +283,20 @@ class ApiClient {
     Map<String, dynamic> userData,
   ) async {
     final uri = Uri.parse('$baseUrl/api/auth/signup');
+    final payload = <String, dynamic>{
+      'username': userData['username'],
+      'name': userData['name'],
+      'email': userData['email'],
+      'phone_number': userData['phone_number'],
+      'password': userData['password'],
+      'role': userData['role'],
+      'project_id': userData['project_id'],
+      'project': userData['project'],
+    };
     final res = await _post(
       uri,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(userData),
+      body: jsonEncode(payload),
     );
     return _handleResponse(res);
   }
@@ -278,12 +304,21 @@ class ApiClient {
   static Future<Map<String, dynamic>> createUser(
     Map<String, dynamic> userData,
   ) async {
-    final token = await _getToken();
-    final uri = Uri.parse('$baseUrl/api/auth/users');
+    final uri = Uri.parse('$baseUrl/api/auth/signup');
+    final payload = <String, dynamic>{
+      'username': userData['username'],
+      'name': userData['name'],
+      'email': userData['email'],
+      'phone_number': userData['phone_number'],
+      'password': userData['password'],
+      'role': userData['role'],
+      'project_id': userData['project_id'],
+      'project': userData['project'],
+    };
     final res = await _post(
       uri,
-      headers: _authHeaders(token),
-      body: jsonEncode(userData),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
     );
     return _handleResponse(res);
   }
@@ -1398,10 +1433,9 @@ class ApiClient {
   static Future<Map<String, dynamic>> getVendorsByProject(
     String projectId,
   ) async {
-    final token = await _getToken();
-    final uri = Uri.parse('$baseUrl/api/vendors/project/$projectId');
-    final res = await _get(uri, headers: _authHeaders(token));
-    return _handleResponse(res);
+    // Backend does not support project-specific vendor fetch (404).
+    // Always return the full vendor list instead.
+    return getVendors();
   }
 
   static Future<Map<String, dynamic>> getVendorById(String vendorId) async {
@@ -1416,10 +1450,18 @@ class ApiClient {
   ) async {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/vendors');
+    final payload = <String, dynamic>{
+      'vendor_name': data['vendor_name'],
+      'vendor_company_name': data['vendor_company_name'],
+      'vendor_email': data['vendor_email'],
+      'mobile_number': data['mobile_number'],
+      'location': data['location'],
+      'status': data['status'],
+    };
     final res = await _post(
       uri,
       headers: _authHeaders(token),
-      body: jsonEncode(data),
+      body: jsonEncode(payload),
     );
     return _handleResponse(res);
   }
@@ -1618,11 +1660,13 @@ class ApiClient {
     final token = await _getToken();
     final uri = Uri.parse('$baseUrl/api/inventory');
     final payload = {
-      'project_id': data['project_id'],
       'brand': data['brand'],
       'name': data['name'],
       'quantity': data['quantity'],
       'price': data['price'],
+      'units': data['units'],
+      'width': data['width'],
+      'height': data['height'],
       'stockin': data['stockin'],
       'billing': data['billing'],
     };
@@ -1645,6 +1689,9 @@ class ApiClient {
     if (data['name'] != null) payload['name'] = data['name'];
     if (data['quantity'] != null) payload['quantity'] = data['quantity'];
     if (data['price'] != null) payload['price'] = data['price'];
+    if (data['units'] != null) payload['units'] = data['units'];
+    if (data['width'] != null) payload['width'] = data['width'];
+    if (data['height'] != null) payload['height'] = data['height'];
     if (data['stockin'] != null) payload['stockin'] = data['stockin'];
     if (data['billing'] != null) payload['billing'] = data['billing'];
     final res = await _put(

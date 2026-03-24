@@ -69,9 +69,7 @@ class _VendorCreatePageState extends State<VendorCreatePage> {
 
     setState(() => _submitting = true);
     try {
-      final projectText = _projectController.text.trim();
       final payload = <String, dynamic>{
-        'project_id': projectText.isEmpty ? null : int.tryParse(projectText),
         'vendor_name': vendorName,
         'vendor_company_name': _companyController.text.trim(),
         'vendor_email': _emailController.text.trim(),

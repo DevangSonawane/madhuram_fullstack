@@ -17,6 +17,7 @@ class AppHeader extends StatelessWidget {
   final VoidCallback? onLeadingPressed;
   final VoidCallback? onNotificationPressed;
   final VoidCallback? onProfilePressed;
+  final bool showMenuButton;
 
   const AppHeader({
     super.key,
@@ -27,6 +28,7 @@ class AppHeader extends StatelessWidget {
     this.onLeadingPressed,
     this.onNotificationPressed,
     this.onProfilePressed,
+    this.showMenuButton = true,
   });
 
   @override
@@ -52,7 +54,7 @@ class AppHeader extends StatelessWidget {
         child: Row(
           children: [
             // Mobile/Tablet menu button
-            if (!responsive.isDesktop)
+            if (!responsive.isDesktop && showMenuButton)
               IconButton(
                 onPressed: onLeadingPressed ?? onMenuPressed,
                 padding: EdgeInsets.zero,
@@ -78,35 +80,22 @@ class AppHeader extends StatelessWidget {
               ),
 
             // Breadcrumbs (desktop and tablet only)
-            if (!responsive.isMobile) ...[
-              Expanded(child: _buildBreadcrumbs(context, isDark, responsive)),
-            ],
-
-            // Search field
-            if (responsive.isMobile)
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: _buildSearchField(context, isDark, responsive),
-                ),
-              )
+            if (!responsive.isMobile)
+              Expanded(child: _buildBreadcrumbs(context, isDark, responsive))
             else
-              SizedBox(
-                width: responsive.value(mobile: 160, tablet: 200, desktop: 240),
-                child: _buildSearchField(context, isDark, responsive),
-              ),
+              const Spacer(),
 
-            SizedBox(
-              width: responsive.value(mobile: 8, tablet: 12, desktop: 16),
+            // Notifications + profile (right aligned)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildNotificationButton(context, isDark, responsive),
+                SizedBox(
+                  width: responsive.value(mobile: 4, tablet: 6, desktop: 8),
+                ),
+                _buildUserAvatar(context, isDark, responsive),
+              ],
             ),
-
-            // Notifications
-            _buildNotificationButton(context, isDark, responsive),
-
-            SizedBox(width: responsive.value(mobile: 4, tablet: 6, desktop: 8)),
-
-            // User avatar
-            _buildUserAvatar(context, isDark, responsive),
           ],
         ),
       ),
@@ -190,47 +179,6 @@ class AppHeader extends StatelessWidget {
               ),
           ],
         ],
-      ),
-    );
-  }
-
-  Widget _buildSearchField(
-    BuildContext context,
-    bool isDark,
-    Responsive responsive,
-  ) {
-    return Container(
-      height: responsive.value(mobile: 36, tablet: 38, desktop: 40),
-      decoration: BoxDecoration(
-        color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(
-          0.5,
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: TextField(
-        style: TextStyle(
-          fontSize: responsive.value(mobile: 13, tablet: 13, desktop: 14),
-        ),
-        decoration: InputDecoration(
-          hintText: responsive.isMobile ? 'Search' : 'Search...',
-          hintStyle: TextStyle(
-            color: isDark
-                ? AppTheme.darkMutedForeground
-                : AppTheme.lightMutedForeground,
-            fontSize: responsive.value(mobile: 13, tablet: 13, desktop: 14),
-          ),
-          prefixIcon: Icon(
-            LucideIcons.search,
-            size: responsive.value(mobile: 14, tablet: 15, desktop: 16),
-            color: isDark
-                ? AppTheme.darkMutedForeground
-                : AppTheme.lightMutedForeground,
-          ),
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(
-            vertical: responsive.value(mobile: 8, tablet: 9, desktop: 10),
-          ),
-        ),
       ),
     );
   }

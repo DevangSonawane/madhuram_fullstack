@@ -14,6 +14,8 @@ class MainLayout extends StatefulWidget {
   final String currentRoute;
   final IconData? headerLeadingIcon;
   final VoidCallback? onHeaderLeadingPressed;
+  final bool showSidebar;
+  final bool requireProject;
 
   const MainLayout({
     super.key,
@@ -22,6 +24,8 @@ class MainLayout extends StatefulWidget {
     required this.currentRoute,
     this.headerLeadingIcon,
     this.onHeaderLeadingPressed,
+    this.showSidebar = true,
+    this.requireProject = true,
   });
 
   @override
@@ -76,7 +80,7 @@ class _MainLayoutState extends State<MainLayout> {
         }
 
         // Project check - redirect if no project selected
-        if (!vm.hasSelectedProject) {
+        if (widget.requireProject && !vm.hasSelectedProject) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               Navigator.pushReplacementNamed(context, '/projects');
@@ -127,7 +131,7 @@ class _MainLayoutState extends State<MainLayout> {
           backgroundColor: isDark
               ? AppTheme.darkBackground
               : AppTheme.lightBackground,
-          drawer: responsive.isMobile || responsive.isTablet
+          drawer: widget.showSidebar && (responsive.isMobile || responsive.isTablet)
               ? Drawer(
                   width: responsive.isMobile
                       ? responsive.screenWidth * 0.85
@@ -142,7 +146,7 @@ class _MainLayoutState extends State<MainLayout> {
           body: Row(
             children: [
               // Desktop sidebar only
-              if (responsive.isDesktop)
+              if (widget.showSidebar && responsive.isDesktop)
                 Stack(
                   children: [
                     AppSidebar(
@@ -167,6 +171,7 @@ class _MainLayoutState extends State<MainLayout> {
                       title: widget.title,
                       leadingIcon: widget.headerLeadingIcon,
                       onLeadingPressed: widget.onHeaderLeadingPressed,
+                      showMenuButton: widget.showSidebar,
                       onMenuPressed: () {
                         _scaffoldKey.currentState?.openDrawer();
                       },
@@ -218,6 +223,8 @@ class ProtectedRoute extends StatelessWidget {
   final Widget child;
   final IconData? headerLeadingIcon;
   final VoidCallback? onHeaderLeadingPressed;
+  final bool showSidebar;
+  final bool requireProject;
 
   const ProtectedRoute({
     super.key,
@@ -226,6 +233,8 @@ class ProtectedRoute extends StatelessWidget {
     required this.child,
     this.headerLeadingIcon,
     this.onHeaderLeadingPressed,
+    this.showSidebar = true,
+    this.requireProject = true,
   });
 
   @override
@@ -236,6 +245,8 @@ class ProtectedRoute extends StatelessWidget {
       child: child,
       headerLeadingIcon: headerLeadingIcon,
       onHeaderLeadingPressed: onHeaderLeadingPressed,
+      showSidebar: showSidebar,
+      requireProject: requireProject,
     );
   }
 }

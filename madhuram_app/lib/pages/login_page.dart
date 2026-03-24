@@ -67,15 +67,48 @@ class _LoginPageState extends State<LoginPage> {
 
       if (result['success'] == true) {
         final user = await AuthStorage.getUser();
+        if (user == null || user.isEmpty) {
+          final error = 'Login failed: missing user/token in response.';
+          store.dispatch(LoginFailure(error));
+          if (mounted) {
+            setState(() => _error = error);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(error),
+                backgroundColor: const Color(0xFFDC2626),
+              ),
+            );
+          }
+          return;
+        }
         final resolvedUser = await AccessControlStore.resolveUserAccessControl(
-          user ?? {},
+          user,
         );
         store.dispatch(LoginSuccess(resolvedUser));
-        Navigator.pushReplacementNamed(context, '/projects');
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/projects');
+        }
       } else {
-        final error = result['error']?.toString() ?? 'Login failed';
+        final status = result['status']?.toString();
+        final baseUrl = ApiClient.baseUrl;
+        final error = (result['error']?.toString().isNotEmpty == true)
+            ? result['error'].toString()
+            : 'Login failed';
         store.dispatch(LoginFailure(error));
-        setState(() => _error = error);
+        if (mounted) {
+          setState(() => _error = error);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                status == null
+                    ? '$error\nAPI: $baseUrl'
+                    : '$error (HTTP $status)\nAPI: $baseUrl',
+              ),
+              backgroundColor: const Color(0xFFDC2626),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
       }
     } catch (e) {
       final error = 'Unable to login right now. $e';

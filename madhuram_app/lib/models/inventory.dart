@@ -5,6 +5,9 @@ class InventoryItem {
   final String name;
   final double quantity;
   final double price;
+  final String unit;
+  final double width;
+  final double height;
   final bool stockIn;
   final bool billing;
 
@@ -15,6 +18,9 @@ class InventoryItem {
     required this.name,
     required this.quantity,
     required this.price,
+    required this.unit,
+    required this.width,
+    required this.height,
     required this.stockIn,
     required this.billing,
   });
@@ -35,6 +41,13 @@ class InventoryItem {
       price: (json['price'] is num)
           ? (json['price'] as num).toDouble()
           : double.tryParse(json['price']?.toString() ?? '') ?? 0.0,
+      unit: (json['units'] ?? json['unit'] ?? '').toString(),
+      width: (json['width'] is num)
+          ? (json['width'] as num).toDouble()
+          : double.tryParse(json['width']?.toString() ?? '') ?? 0.0,
+      height: (json['height'] is num)
+          ? (json['height'] as num).toDouble()
+          : double.tryParse(json['height']?.toString() ?? '') ?? 0.0,
       stockIn: json['stockin'] == true || json['stockin']?.toString() == 'true',
       billing: json['billing'] == true || json['billing']?.toString() == 'true',
     );
@@ -48,6 +61,9 @@ class InventoryItem {
       'name': name,
       'quantity': quantity,
       'price': price,
+      'units': unit,
+      'width': width,
+      'height': height,
       'stockin': stockIn,
       'billing': billing,
     };

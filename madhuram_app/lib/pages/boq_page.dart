@@ -200,7 +200,8 @@ class _BOQPageState extends State<BOQPage> {
   int _currentPage = 1;
   final int _itemsPerPage = 10;
   final _searchController = TextEditingController();
-  bool _showFilters = false;
+  final Set<String> _selectedIds = {};
+  bool _bulkDeleting = false;
 
   @override
   void initState() {
@@ -239,11 +240,25 @@ class _BOQPageState extends State<BOQPage> {
       final result = await ApiClient.getBOQsByProject(projectId);
       if (!mounted) return;
       if (result['success'] == true) {
-        final data = result['data'] as List;
-        final loaded = data.map((e) => BOQItem.fromJson(e)).toList();
+        final data = result['data'];
+        final List<dynamic> rows;
+        if (data is List) {
+          rows = data;
+        } else if (data is Map && data['boqs'] is List) {
+          rows = List<dynamic>.from(data['boqs'] as List);
+        } else {
+          rows = const [];
+        }
+        final loaded = rows
+            .whereType<Map>()
+            .map((e) => BOQItem.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
         setState(() {
           _items = loaded;
           _isLoading = false;
+          _selectedIds.removeWhere(
+            (id) => !_items.any((item) => item.id == id),
+          );
         });
       } else {
         setState(() {
@@ -288,11 +303,108 @@ class _BOQPageState extends State<BOQPage> {
         (sum, item) => sum + (item.amount ?? (item.quantity * (item.rate ?? 0))),
       );
 
+  bool get _hasSelection => _selectedIds.isNotEmpty;
+
+  bool get _isPageFullySelected {
+    if (_paginatedItems.isEmpty) return false;
+    return _paginatedItems.every((item) => _selectedIds.contains(item.id));
+  }
+
+  bool get _isPagePartiallySelected {
+    if (_paginatedItems.isEmpty) return false;
+    final anySelected = _paginatedItems.any((item) => _selectedIds.contains(item.id));
+    return anySelected && !_isPageFullySelected;
+  }
+
+  void _toggleItemSelection(String id, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedIds.add(id);
+      } else {
+        _selectedIds.remove(id);
+      }
+    });
+  }
+
+  void _togglePageSelection(bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedIds.addAll(_paginatedItems.map((item) => item.id));
+      } else {
+        for (final item in _paginatedItems) {
+          _selectedIds.remove(item.id);
+        }
+      }
+    });
+  }
+
+  Future<void> _confirmDeleteSelected() async {
+    if (_selectedIds.isEmpty) return;
+    final count = _selectedIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete selected BOQ items'),
+        content: Text(
+          'Delete $count selected item(s)? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _deleteSelected();
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_bulkDeleting || _selectedIds.isEmpty) return;
+    setState(() => _bulkDeleting = true);
+    int deleted = 0;
+    int failed = 0;
+    final ids = _selectedIds.toList();
+
+    for (final id in ids) {
+      final result = await ApiClient.deleteBOQ(id);
+      if (result['success'] == true) {
+        deleted++;
+      } else {
+        failed++;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _bulkDeleting = false;
+      _selectedIds.clear();
+    });
+    await _loadBOQItems();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          failed > 0
+              ? '$deleted deleted, $failed failed.'
+              : '$deleted item(s) deleted.',
+        ),
+        backgroundColor: failed > 0 ? Colors.red : null,
+      ),
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final responsive = Responsive(context);
-    final isMobile = responsive.isMobile;
     final selectedProjectId = StoreProvider.of<AppState>(context).state.project.selectedProjectId ?? '';
     final hasProjectSelected = selectedProjectId.isNotEmpty;
 
@@ -321,7 +433,7 @@ class _BOQPageState extends State<BOQPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Manage Bill of Quantities for your project',
+                      'Manage Bill of Quantities for projects.',
                       style: TextStyle(
                         color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
                       ),
@@ -338,58 +450,6 @@ class _BOQPageState extends State<BOQPage> {
           _buildQuickActions(isDark, responsive, hasProjectSelected),
           const SizedBox(height: 16),
 
-          // Filter toggle on mobile
-          if (isMobile)
-            GestureDetector(
-              onTap: () => setState(() => _showFilters = !_showFilters),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                decoration: BoxDecoration(
-                  color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Filters',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
-                      ),
-                    ),
-                    Icon(
-                      _showFilters ? Icons.expand_less : Icons.expand_more,
-                      size: 20,
-                      color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          if (isMobile) const SizedBox(height: 8),
-          // Search and filters
-          if (!isMobile || _showFilters)
-            Row(
-              children: [
-                Expanded(
-                  child: MadSearchInput(
-                    controller: _searchController,
-                    hintText: 'Search BOQ items...',
-                    onChanged: (value) => setState(() {
-                      _searchQuery = value;
-                      _currentPage = 1;
-                    }),
-                    onClear: () => setState(() {
-                      _searchQuery = '';
-                      _currentPage = 1;
-                    }),
-                  ),
-                ),
-              ],
-            ),
-          const SizedBox(height: 24),
-
           // Responsive, swipeable table
           _isLoading
               ? MadCard(
@@ -401,7 +461,7 @@ class _BOQPageState extends State<BOQPage> {
               : _error != null
                   ? _buildErrorState(isDark, _error!)
                   : _filteredItems.isEmpty
-                      ? _buildEmptyState(isDark)
+                      ? _buildEmptyState(isDark, hasProjectSelected)
                       : _buildResponsiveTable(isDark, responsive),
             const SizedBox(height: 12),
           ],
@@ -411,99 +471,70 @@ class _BOQPageState extends State<BOQPage> {
   }
 
   Widget _buildQuickActions(bool isDark, Responsive responsive, bool hasProjectSelected) {
+    final isMobile = responsive.isMobile;
+    final buttons = [
+      MadButton(
+        text: 'Import BOQ PDF',
+        icon: LucideIcons.fileUp,
+        variant: ButtonVariant.outline,
+        onPressed: _importFromPdf,
+      ),
+      MadButton(
+        text: 'Export',
+        icon: LucideIcons.download,
+        variant: ButtonVariant.outline,
+        onPressed: _showExportOptionsSheet,
+      ),
+      MadButton(
+        text: 'Add Item',
+        icon: LucideIcons.plus,
+        disabled: !hasProjectSelected,
+        onPressed: hasProjectSelected ? _openAddItemPage : null,
+      ),
+      MadButton(
+        text: _hasSelection
+            ? 'Delete Selected (${_selectedIds.length})'
+            : 'Delete Selected',
+        icon: LucideIcons.trash2,
+        variant: ButtonVariant.destructive,
+        disabled: !hasProjectSelected || !_hasSelection || _bulkDeleting,
+        onPressed: _confirmDeleteSelected,
+      ),
+      MadButton(
+        text: _isLoading ? 'Loading…' : 'Refresh',
+        icon: LucideIcons.refreshCw,
+        variant: ButtonVariant.outline,
+        disabled: _isLoading,
+        onPressed: _loadBOQItems,
+      ),
+    ];
+
     return MadCard(
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _buildActionTile(
-              isDark: isDark,
-              responsive: responsive,
-              icon: LucideIcons.fileUp,
-              title: 'Import BOQ PDF',
-              subtitle: 'Extract and preview',
-              onTap: _importFromPdf,
-            ),
-            _buildActionTile(
-              isDark: isDark,
-              responsive: responsive,
-              icon: LucideIcons.download,
-              title: 'Export',
-              subtitle: 'PDF or Excel',
-              onTap: _showExportOptionsSheet,
-            ),
-            _buildActionTile(
-              isDark: isDark,
-              responsive: responsive,
-              icon: LucideIcons.plus,
-              title: 'Add Item',
-              subtitle: hasProjectSelected ? 'Create BOQ row' : 'Select project first',
-              onTap: hasProjectSelected ? _openAddItemPage : null,
-            ),
-          ],
-        ),
+        padding: EdgeInsets.all(isMobile ? 12 : 14),
+        child: isMobile
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final button in buttons) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: button,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ],
+              )
+            : Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: buttons,
+              ),
       ),
     );
   }
 
-  Widget _buildActionTile({
-    required bool isDark,
-    required Responsive responsive,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback? onTap,
-  }) {
-    final width = responsive.isMobile ? responsive.screenWidth - 56 : 220.0;
-    final disabled = onTap == null;
-    return Opacity(
-      opacity: disabled ? 0.6 : 1,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          width: width,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
-            color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.35),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, size: 18, color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  
 
   void _showExportOptionsSheet() {
     showModalBottomSheet(
@@ -536,6 +567,7 @@ class _BOQPageState extends State<BOQPage> {
 
   Widget _buildResponsiveTable(bool isDark, Responsive responsive) {
     final isMobile = responsive.isMobile;
+    const checkboxWidth = 48.0;
     const categoryWidth = 140.0;
     const itemCodeWidth = 120.0;
     const descriptionWidth = 320.0;
@@ -546,7 +578,8 @@ class _BOQPageState extends State<BOQPage> {
     const amountWidth = 140.0;
     const actionsWidth = 80.0;
     const horizontalCellPadding = 24.0; // 12 left + 12 right in header/rows/total rows
-    const tableWidth = categoryWidth +
+    const tableWidth = checkboxWidth +
+        categoryWidth +
         itemCodeWidth +
         descriptionWidth +
         floorWidth +
@@ -561,6 +594,83 @@ class _BOQPageState extends State<BOQPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (isMobile) ...[
+                  Text(
+                    'BOQ Items',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: isDark
+                          ? AppTheme.darkForeground
+                          : AppTheme.lightForeground,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  MadSearchInput(
+                    controller: _searchController,
+                    hintText: 'Search by section, code, description...',
+                    onChanged: (value) => setState(() {
+                      _searchQuery = value;
+                      _currentPage = 1;
+                    }),
+                    onClear: () => setState(() {
+                      _searchQuery = '';
+                      _currentPage = 1;
+                    }),
+                  ),
+                ] else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'BOQ Items',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: isDark
+                                ? AppTheme.darkForeground
+                                : AppTheme.lightForeground,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 280,
+                        child: MadSearchInput(
+                          controller: _searchController,
+                          hintText: 'Search by section, code, description...',
+                          onChanged: (value) => setState(() {
+                            _searchQuery = value;
+                            _currentPage = 1;
+                          }),
+                          onClear: () => setState(() {
+                            _searchQuery = '';
+                            _currentPage = 1;
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                if (_searchQuery.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Showing ${_filteredItems.length} of ${_items.length} item(s)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark
+                          ? AppTheme.darkMutedForeground
+                          : AppTheme.lightMutedForeground,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
           if (isMobile)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -637,7 +747,21 @@ class _BOQPageState extends State<BOQPage> {
       ),
       child: Row(
         children: [
-          _buildSizedHeaderCell('Category', 140, isDark),
+          SizedBox(
+            width: 48,
+            child: Checkbox(
+              value: _isPageFullySelected
+                  ? true
+                  : _isPagePartiallySelected
+                      ? null
+                      : false,
+              tristate: true,
+              onChanged: _paginatedItems.isEmpty
+                  ? null
+                  : (value) => _togglePageSelection(value == true),
+            ),
+          ),
+          _buildSizedHeaderCell('Section', 140, isDark),
           _buildSizedHeaderCell('Item Code', 120, isDark),
           _buildSizedHeaderCell('Description', 320, isDark),
           _buildSizedHeaderCell('Floor', 110, isDark),
@@ -671,6 +795,14 @@ class _BOQPageState extends State<BOQPage> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Row(
         children: [
+          SizedBox(
+            width: 48,
+            child: Checkbox(
+              value: _selectedIds.contains(item.id),
+              onChanged: (value) =>
+                  _toggleItemSelection(item.id, value == true),
+            ),
+          ),
           SizedBox(
             width: 140,
             child: Align(
@@ -744,6 +876,7 @@ class _BOQPageState extends State<BOQPage> {
       ),
       child: Row(
         children: [
+          const SizedBox(width: 48),
           const SizedBox(width: 140),
           const SizedBox(width: 120),
           SizedBox(
@@ -862,7 +995,21 @@ class _BOQPageState extends State<BOQPage> {
     );
   }
 
-  Widget _buildEmptyState(bool isDark) {
+  Widget _buildEmptyState(bool isDark, bool hasProjectSelected) {
+    String title;
+    String subtitle;
+
+    if (!hasProjectSelected) {
+      title = 'Select a project to load BOQ items.';
+      subtitle = 'Choose a project to view and manage BOQ items.';
+    } else if (_searchQuery.isNotEmpty) {
+      title = 'No items found matching your search.';
+      subtitle = 'Try a different search term.';
+    } else {
+      title = 'No BOQ items. Import a PDF or add items manually.';
+      subtitle = 'Start by importing a BOQ PDF or adding a new item.';
+    }
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(48),
@@ -876,23 +1023,23 @@ class _BOQPageState extends State<BOQPage> {
             ),
             const SizedBox(height: 24),
             Text(
-              _searchQuery.isEmpty ? 'No BOQ items yet' : 'No items found',
+              title,
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: isDark ? AppTheme.darkForeground : AppTheme.lightForeground,
               ),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              _searchQuery.isEmpty
-                  ? 'Add items manually or import from a PDF'
-                  : 'Try a different search term',
+              subtitle,
               style: TextStyle(
                 color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
               ),
+              textAlign: TextAlign.center,
             ),
-            if (_searchQuery.isEmpty) ...[
+            if (_searchQuery.isEmpty && hasProjectSelected) ...[
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,

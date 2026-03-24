@@ -262,6 +262,17 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                       Row(
                         children: [
                           MadButton(
+                            icon: LucideIcons.users,
+                            text: responsive.isMobile ? null : 'Vendors',
+                            onPressed: () =>
+                                Navigator.pushNamed(context, '/vendors'),
+                            variant: ButtonVariant.outline,
+                            size: responsive.isMobile
+                                ? ButtonSize.icon
+                                : ButtonSize.md,
+                          ),
+                          const SizedBox(width: 8),
+                          MadButton(
                             icon: LucideIcons.boxes,
                             text: responsive.isMobile ? null : 'Add Inventory',
                             onPressed: () =>
@@ -334,29 +345,28 @@ class _ProjectSelectionPageState extends State<ProjectSelectionPage> {
                       fontStyle: FontStyle.italic,
                     ),
                   ),
-                  SizedBox(
-                    height: responsive.value(
-                      mobile: 16,
-                      tablet: 20,
-                      desktop: 24,
-                    ),
-                  ),
-                  // Search
-                  MadSearchInput(
-                    controller: _searchController,
-                    hintText: 'Search projects...',
-                    width: double.infinity,
-                    onChanged: (value) => setState(() => _searchQuery = value),
-                    onClear: () => setState(() {
-                      _searchQuery = '';
-                      _searchController.clear();
-                    }),
-                  ),
                 ],
               ),
             ),
 
-            // Projects grid or loading/error state
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                responsive.value(mobile: 16, tablet: 20, desktop: 24),
+                responsive.value(mobile: 8, tablet: 10, desktop: 12),
+                responsive.value(mobile: 16, tablet: 20, desktop: 24),
+                responsive.value(mobile: 12, tablet: 14, desktop: 16),
+              ),
+              child: MadSearchInput(
+                controller: _searchController,
+                hintText: 'Search projects...',
+                width: double.infinity,
+                onChanged: (value) => setState(() => _searchQuery = value),
+                onClear: () => setState(() {
+                  _searchQuery = '';
+                  _searchController.clear();
+                }),
+              ),
+            ),
             Expanded(child: _buildContent(isDark, responsive, vm.isAdmin)),
           ],
         ),

@@ -11,7 +11,9 @@ import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
 
 class VendorsPageFull extends StatefulWidget {
-  const VendorsPageFull({super.key});
+  final bool embedded;
+
+  const VendorsPageFull({super.key, this.embedded = false});
 
   @override
   State<VendorsPageFull> createState() => _VendorsPageFullState();
@@ -52,15 +54,34 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
     });
 
     try {
-      final result =
-          (_selectedProjectId != null && _selectedProjectId!.isNotEmpty)
-          ? await ApiClient.getVendorsByProject(_selectedProjectId!)
-          : await ApiClient.getVendors();
+      Map<String, dynamic> result;
+      final projectId = _selectedProjectId;
+
+      if (projectId != null && projectId.isNotEmpty) {
+        result = await ApiClient.getVendorsByProject(projectId);
+        if (result['success'] != true) {
+          final fallback = await ApiClient.getVendors();
+          if (fallback['success'] == true) {
+            result = fallback;
+            _showSnack(
+              'Project vendors not available. Showing all vendors.',
+            );
+          }
+        }
+      } else {
+        result = await ApiClient.getVendors();
+      }
 
       if (!mounted) return;
 
       if (result['success'] == true) {
-        final raw = (result['data'] as List?) ?? const [];
+        final data = result['data'];
+        final raw =
+            data is List
+                ? data
+                : (data is Map && data['vendors'] is List
+                      ? data['vendors'] as List
+                      : const []);
         setState(() {
           _vendors = raw
               .whereType<Map>()
@@ -644,15 +665,64 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
                 ),
               ),
               if (!isMobile)
-                MadButton(
-                  text: 'Add Vendor',
-                  icon: LucideIcons.plus,
-                  onPressed: _goToAddVendorPage,
+                Row(
+                  children: [
+                    MadButton(
+                      text: 'Back',
+                      icon: LucideIcons.arrowLeft,
+                      variant: ButtonVariant.outline,
+                      size: ButtonSize.sm,
+                      onPressed: () {
+                        if (Navigator.of(context).canPop()) {
+                          Navigator.of(context).pop();
+                        } else {
+                          Navigator.pushNamed(context, '/projects');
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 12),
+                    MadButton(
+                      text: 'Vendor Comparison',
+                      icon: LucideIcons.arrowRightLeft,
+                      variant: ButtonVariant.outline,
+                      onPressed: () =>
+                          Navigator.pushNamed(context, '/vendor-comparison'),
+                    ),
+                    const SizedBox(width: 12),
+                    MadButton(
+                      text: 'Add Vendor',
+                      icon: LucideIcons.plus,
+                      onPressed: _goToAddVendorPage,
+                    ),
+                  ],
                 ),
             ],
           ),
           if (isMobile) ...[
             const SizedBox(height: 14),
+            MadButton(
+              text: 'Back',
+              icon: LucideIcons.arrowLeft,
+              variant: ButtonVariant.outline,
+              width: double.infinity,
+              onPressed: () {
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                } else {
+                  Navigator.pushNamed(context, '/projects');
+                }
+              },
+            ),
+            const SizedBox(height: 10),
+            MadButton(
+              text: 'Vendor Comparison',
+              icon: LucideIcons.arrowRightLeft,
+              variant: ButtonVariant.outline,
+              width: double.infinity,
+              onPressed: () =>
+                  Navigator.pushNamed(context, '/vendor-comparison'),
+            ),
+            const SizedBox(height: 10),
             MadButton(
               text: 'Add Vendor',
               icon: LucideIcons.plus,
@@ -1471,24 +1541,32 @@ class _VendorsPageFullState extends State<VendorsPageFull> {
           WidgetsBinding.instance.addPostFrameCallback((_) => _loadVendors());
         }
 
+        final content = SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHero(isDark, responsive.isMobile),
+              const SizedBox(height: 16),
+              _buildStatsRow(responsive),
+              const SizedBox(height: 16),
+              _buildDirectoryCard(
+                isDark,
+                responsive,
+              ),
+            ],
+          ),
+        );
+
+        if (widget.embedded) {
+          return content;
+        }
+
         return ProtectedRoute(
           title: 'Vendors',
           route: '/vendors',
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHero(isDark, responsive.isMobile),
-                const SizedBox(height: 16),
-                _buildStatsRow(responsive),
-                const SizedBox(height: 16),
-                _buildDirectoryCard(
-                  isDark,
-                  responsive,
-                ),
-              ],
-            ),
-          ),
+          showSidebar: false,
+          requireProject: false,
+          child: content,
         );
       },
     );
