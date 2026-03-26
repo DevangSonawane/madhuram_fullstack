@@ -11,10 +11,10 @@ import '../store/app_state.dart';
 import '../services/api_client.dart';
 import '../components/ui/mad_card.dart';
 import '../components/ui/mad_button.dart';
-import '../components/ui/mad_badge.dart';
 import '../components/ui/stat_card.dart';
 import '../components/layout/main_layout.dart';
 import '../utils/responsive.dart';
+import '../utils/access_control.dart';
 
 /// Dashboard page aligned with React dashboard endpoints and metrics
 class DashboardPage extends StatefulWidget {
@@ -33,13 +33,17 @@ class _DashboardPageState extends State<DashboardPage> {
   List<Map<String, dynamic>> _chartData = [];
   List<Map<String, dynamic>> _recentActivity = [];
   Map<String, dynamic> _stats = {};
+  List<Map<String, dynamic>> _attendanceItems = [];
   bool _isLoading = false;
   bool _isRefreshing = false;
+  bool _attendanceLoading = false;
   String? _error;
 
   String? _lastUserId;
   String? _lastProjectId;
   String? _lastSocketToken;
+  String? _lastAttendanceProjectId;
+  bool? _lastAttendanceAccess;
 
   WebSocketChannel? _activityChannel;
   StreamSubscription? _activitySocketSub;
@@ -57,17 +61,34 @@ class _DashboardPageState extends State<DashboardPage> {
     final userId = _resolveUserId(user);
     final projectId = _resolveProjectId(selectedProject);
     final token = user?['token']?.toString();
+    final canViewAttendance = hasPageAccess(user, '/attendance');
     final scopeChanged = _lastUserId != userId || _lastProjectId != projectId;
     final socketScopeChanged =
         _lastUserId != userId ||
         _lastProjectId != projectId ||
         _lastSocketToken != token;
+    final attendanceScopeChanged =
+        _lastAttendanceProjectId != projectId ||
+        _lastAttendanceAccess != canViewAttendance;
 
     if (scopeChanged) {
       _lastUserId = userId;
       _lastProjectId = projectId;
       if (userId != null && userId.isNotEmpty) {
         _loadDashboardData(userId: userId, projectId: projectId);
+      }
+    }
+
+    if (attendanceScopeChanged) {
+      _lastAttendanceProjectId = projectId;
+      _lastAttendanceAccess = canViewAttendance;
+      if (canViewAttendance) {
+        _loadAttendance(projectId: projectId);
+      } else {
+        setState(() {
+          _attendanceItems = [];
+          _attendanceLoading = false;
+        });
       }
     }
 
@@ -79,6 +100,96 @@ class _DashboardPageState extends State<DashboardPage> {
         projectId: projectId,
       );
     }
+  }
+
+  Future<void> _loadAttendance({String? projectId}) async {
+    if (!mounted) return;
+    setState(() {
+      _attendanceLoading = true;
+    });
+    try {
+      Map<String, dynamic> result;
+      if (projectId != null && projectId.isNotEmpty) {
+        result = await ApiClient.getAttendanceByProject(projectId);
+        if (result['success'] != true && result['status'] == 404) {
+          final fallback = await ApiClient.getAllAttendance();
+          if (fallback['success'] == true) {
+            final filtered = _normalizeAttendance(
+              _extractAttendanceList(fallback['data']),
+            ).where(
+              (item) =>
+                  item['project_id']?.toString() == projectId.toString(),
+            ).toList();
+            setState(() {
+              _attendanceItems = filtered.take(5).toList();
+              _attendanceLoading = false;
+            });
+            return;
+          }
+        }
+      } else {
+        result = await ApiClient.getAllAttendance();
+      }
+
+      if (!mounted) return;
+      if (result['success'] == true) {
+        final list = _normalizeAttendance(_extractAttendanceList(result['data']));
+        setState(() {
+          _attendanceItems = list.take(5).toList();
+          _attendanceLoading = false;
+        });
+      } else {
+        setState(() {
+          _attendanceItems = [];
+          _attendanceLoading = false;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _attendanceItems = [];
+        _attendanceLoading = false;
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> _extractAttendanceList(dynamic data) {
+    if (data is List) {
+      return data.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    return [];
+  }
+
+  List<Map<String, dynamic>> _normalizeAttendance(
+    List<Map<String, dynamic>> list,
+  ) {
+    list.sort((a, b) {
+      final dateA = _parseDateTime(a['date'] ?? a['created_at']);
+      final dateB = _parseDateTime(b['date'] ?? b['created_at']);
+      final timeA = dateA?.millisecondsSinceEpoch ?? 0;
+      final timeB = dateB?.millisecondsSinceEpoch ?? 0;
+      if (timeA != timeB) return timeB.compareTo(timeA);
+      final createdA = _parseDateTime(a['created_at']);
+      final createdB = _parseDateTime(b['created_at']);
+      return (createdB?.millisecondsSinceEpoch ?? 0)
+          .compareTo(createdA?.millisecondsSinceEpoch ?? 0);
+    });
+    return list;
+  }
+
+  DateTime? _parseDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    final raw = value.toString();
+    return DateTime.tryParse(raw);
+  }
+
+  String _formatAttendanceTime(Map<String, dynamic> item) {
+    final dt = _parseDateTime(item['created_at'] ?? item['date']);
+    if (dt == null) return '-';
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   @override
@@ -197,7 +308,6 @@ class _DashboardPageState extends State<DashboardPage> {
       'time': _formatRelativeTime(
         raw['created_at']?.toString() ?? raw['createdAt']?.toString(),
       ),
-      'status': _statusFromAction(action),
       'initials': _activityInitials(performer),
     };
   }
@@ -229,17 +339,6 @@ class _DashboardPageState extends State<DashboardPage> {
       return double.tryParse(raw.toString());
     }
     return null;
-  }
-
-  String _statusFromAction(String action) {
-    switch (action.toLowerCase()) {
-      case 'created':
-        return 'success';
-      case 'deleted':
-        return 'warning';
-      default:
-        return 'info';
-    }
   }
 
   String _humanizeAction(String action) {
@@ -472,6 +571,7 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget _buildDashboard(BuildContext context, _DashboardViewModel vm) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final responsive = Responsive(context);
+    final canViewAttendance = hasPageAccess(vm.user, '/attendance');
 
     final stats = _stats;
     final cardData = [
@@ -542,6 +642,19 @@ class _DashboardPageState extends State<DashboardPage> {
             SizedBox(
               height: responsive.value(mobile: 16, tablet: 20, desktop: 24),
             ),
+
+            if (canViewAttendance)
+              _buildAttendanceCard(
+                context,
+                isDark,
+                responsive,
+                vm,
+              ),
+
+            if (canViewAttendance)
+              SizedBox(
+                height: responsive.value(mobile: 16, tablet: 20, desktop: 24),
+              ),
 
             if (responsive.isMobile)
               Column(
@@ -886,28 +999,15 @@ class _DashboardPageState extends State<DashboardPage> {
     List<Map<String, dynamic>> activityData,
     Responsive responsive,
   ) {
-    final items = activityData.take(responsive.isMobile ? 3 : 5).toList();
+    final items = activityData.take(responsive.isMobile ? 4 : 6).toList();
     return MadCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          MadCardHeader(
-            title: const MadCardTitle('Recent Activity'),
-            subtitle: const MadCardDescription(
-              'Latest actions across the system.',
-            ),
-            action: GestureDetector(
-              onTap: () => Navigator.pushNamed(context, '/audit-logs'),
-              child: Text(
-                'View All',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.primaryColor,
-                ),
-              ),
-            ),
+          const MadCardHeader(
+            title: MadCardTitle('Recent Activity'),
+            subtitle: MadCardDescription('Latest actions across the system.'),
           ),
           MadCardContent(
             child: _isLoading
@@ -929,202 +1029,366 @@ class _DashboardPageState extends State<DashboardPage> {
                       ),
                     ),
                   )
-                : _buildTimeline(items, isDark, responsive),
+                : Column(
+                    children: items
+                        .map(
+                          (activity) =>
+                              _buildActivityCard(activity, isDark, responsive),
+                        )
+                        .toList(),
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTimeline(
-    List<Map<String, dynamic>> items,
-    bool isDark,
-    Responsive responsive,
-  ) {
-    final avatarSize = responsive.value(
-      mobile: 32.0,
-      tablet: 36.0,
-      desktop: 40.0,
-    );
-    final leftColumnWidth = avatarSize + 16;
-    final lineLeft = leftColumnWidth / 2 - 1;
-
-    return IntrinsicHeight(
-      child: Stack(
-        children: [
-          Positioned(
-            left: lineLeft,
-            top: avatarSize / 2 + 8,
-            bottom: 8,
-            child: Container(
-              width: 2,
-              decoration: BoxDecoration(
-                color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder)
-                    .withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(1),
-              ),
-            ),
-          ),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: items
-                .map(
-                  (activity) =>
-                      _buildActivityItem(activity, isDark, responsive),
-                )
-                .toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActivityItem(
+  Widget _buildActivityCard(
     Map<String, dynamic> activity,
     bool isDark,
     Responsive responsive,
   ) {
-    final status = activity['status'] as String? ?? 'info';
-    Color avatarColor;
-    BadgeVariant badgeVariant;
-    switch (status) {
-      case 'success':
-        avatarColor = Colors.green;
-        badgeVariant = BadgeVariant.success;
-        break;
-      case 'warning':
-        avatarColor = Colors.amber;
-        badgeVariant = BadgeVariant.warning;
-        break;
-      case 'info':
-      default:
-        avatarColor = Colors.blue;
-        badgeVariant = BadgeVariant.primary;
-        break;
-    }
-
-    final avatarSize = responsive.value(
-      mobile: 32.0,
-      tablet: 36.0,
-      desktop: 40.0,
-    );
     final initials = (activity['initials'] as String? ?? 'U').toUpperCase();
-
-    final leftColumnWidth = avatarSize + 16;
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: responsive.value(mobile: 12, tablet: 14, desktop: 16),
+    final avatarSize = responsive.value(mobile: 36.0, tablet: 38.0, desktop: 40.0);
+    return Container(
+      margin: EdgeInsets.only(
+        bottom: responsive.value(mobile: 10, tablet: 12, desktop: 12),
+      ),
+      padding: EdgeInsets.all(
+        responsive.value(mobile: 10, tablet: 12, desktop: 12),
+      ),
+      decoration: BoxDecoration(
+        color: isDark ? AppTheme.darkCard : AppTheme.lightCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder)
+              .withValues(alpha: 0.5),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: leftColumnWidth,
+          Container(
+            width: avatarSize,
+            height: avatarSize,
+            decoration: BoxDecoration(
+              color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder)
+                  .withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(avatarSize / 2),
+            ),
             child: Center(
-              child: Container(
-                width: avatarSize,
-                height: avatarSize,
-                decoration: BoxDecoration(
-                  color: avatarColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(avatarSize / 2),
-                  border: Border.all(color: avatarColor, width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 4,
-                    ),
-                  ],
-                ),
-                child: Center(
-                  child: Text(
-                    initials.length >= 2 ? initials.substring(0, 2) : initials,
-                    style: TextStyle(
-                      fontSize: responsive.value(
-                        mobile: 10,
-                        tablet: 11,
-                        desktop: 12,
-                      ),
-                      fontWeight: FontWeight.bold,
-                      color: avatarColor,
-                    ),
-                  ),
+              child: Text(
+                initials.length >= 2 ? initials.substring(0, 2) : initials,
+                style: TextStyle(
+                  fontSize: responsive.value(mobile: 12, tablet: 12, desktop: 13),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
           ),
-          SizedBox(width: responsive.value(mobile: 8, tablet: 10, desktop: 12)),
+          SizedBox(width: responsive.value(mobile: 10, tablet: 12, desktop: 12)),
           Expanded(
-            child: Container(
-              padding: EdgeInsets.all(
-                responsive.value(mobile: 10, tablet: 11, desktop: 12),
-              ),
-              decoration: BoxDecoration(
-                color: isDark ? AppTheme.darkCard : AppTheme.lightCard,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: (isDark ? AppTheme.darkBorder : AppTheme.lightBorder)
-                      .withValues(alpha: 0.5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        activity['user'] ?? 'System',
+                        style: TextStyle(
+                          fontSize: responsive.value(
+                            mobile: 13,
+                            tablet: 13,
+                            desktop: 14,
+                          ),
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      activity['time'] ?? '',
+                      style: TextStyle(
+                        fontSize: responsive.value(
+                          mobile: 11,
+                          tablet: 11,
+                          desktop: 12,
+                        ),
+                        color: isDark
+                            ? AppTheme.darkMutedForeground
+                            : AppTheme.lightMutedForeground,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  activity['action'] ?? '',
+                  style: TextStyle(
+                    fontSize: responsive.value(
+                      mobile: 12,
+                      tablet: 12,
+                      desktop: 13,
+                    ),
+                    color: isDark
+                        ? AppTheme.darkMutedForeground
+                        : AppTheme.lightMutedForeground,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttendanceCard(
+    BuildContext context,
+    bool isDark,
+    Responsive responsive,
+    _DashboardViewModel vm,
+  ) {
+    return MadCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          MadCardHeader(
+            title: const MadCardTitle('Attendance'),
+            subtitle: const MadCardDescription(
+              'Latest attendance submissions for this project.',
+            ),
+            action: GestureDetector(
+              onTap: () => Navigator.pushNamed(context, '/attendance'),
+              child: Text(
+                'View all',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.primaryColor,
                 ),
               ),
+            ),
+          ),
+          MadCardContent(
+            child: _attendanceLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                : _attendanceItems.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      'No attendance records found.',
+                      style: TextStyle(
+                        color: isDark
+                            ? AppTheme.darkMutedForeground
+                            : AppTheme.lightMutedForeground,
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: _attendanceItems
+                        .map(
+                          (item) => Container(
+                            margin: EdgeInsets.only(
+                              bottom: responsive.value(
+                                mobile: 10,
+                                tablet: 12,
+                                desktop: 12,
+                              ),
+                            ),
+                            padding: EdgeInsets.all(
+                              responsive.value(
+                                mobile: 10,
+                                tablet: 12,
+                                desktop: 12,
+                              ),
+                            ),
+                            decoration: BoxDecoration(
+                              color:
+                                  isDark ? AppTheme.darkCard : AppTheme.lightCard,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: (isDark
+                                        ? AppTheme.darkBorder
+                                        : AppTheme.lightBorder)
+                                    .withValues(alpha: 0.5),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item['user_name']?.toString() ?? '—',
+                                        style: TextStyle(
+                                          fontSize: responsive.value(
+                                            mobile: 13,
+                                            tablet: 13,
+                                            desktop: 14,
+                                          ),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${item['date'] ?? '-'} • ${_formatAttendanceTime(item)}',
+                                        style: TextStyle(
+                                          fontSize: responsive.value(
+                                            mobile: 11,
+                                            tablet: 11,
+                                            desktop: 12,
+                                          ),
+                                          color: isDark
+                                              ? AppTheme.darkMutedForeground
+                                              : AppTheme.lightMutedForeground,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        item['location']?.toString() ?? '-',
+                                        style: TextStyle(
+                                          fontSize: responsive.value(
+                                            mobile: 11,
+                                            tablet: 11,
+                                            desktop: 12,
+                                          ),
+                                          color: isDark
+                                              ? AppTheme.darkMutedForeground
+                                              : AppTheme.lightMutedForeground,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                MadButton(
+                                  text: 'Preview',
+                                  icon: LucideIcons.eye,
+                                  variant: ButtonVariant.outline,
+                                  size: ButtonSize.sm,
+                                  onPressed: () {
+                                    _showAttendancePreview(context, item);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAttendancePreview(
+    BuildContext context,
+    Map<String, dynamic> item,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Attendance Preview'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          activity['user'] ?? 'Unknown',
-                          style: TextStyle(
-                            fontSize: responsive.value(
-                              mobile: 13,
-                              tablet: 13,
-                              desktop: 14,
-                            ),
-                            fontWeight: FontWeight.bold,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      MadBadge(text: status, variant: badgeVariant),
-                    ],
+                  _buildAttendancePhoto(
+                    item['photo_selfie'],
+                    'Selfie',
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    activity['action'] ?? '',
-                    style: TextStyle(
-                      fontSize: responsive.value(
-                        mobile: 12,
-                        tablet: 12,
-                        desktop: 13,
-                      ),
-                      color: isDark
-                          ? AppTheme.darkMutedForeground
-                          : AppTheme.lightMutedForeground,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  const SizedBox(height: 12),
+                  _buildAttendancePhoto(
+                    item['photo_site'],
+                    'Site Photo',
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    activity['time'] ?? '',
-                    style: TextStyle(
-                      fontSize: responsive.value(
-                        mobile: 10,
-                        tablet: 11,
-                        desktop: 12,
-                      ),
-                      fontFamily: 'monospace',
-                      color: isDark
-                          ? AppTheme.darkMutedForeground
-                          : AppTheme.lightMutedForeground,
-                    ),
-                  ),
+                  const SizedBox(height: 16),
+                  _buildPreviewField('Name', item['user_name']),
+                  _buildPreviewField('Phone', item['phone_number']),
+                  _buildPreviewField('Date', item['date']),
+                  _buildPreviewField('Location', item['location']),
                 ],
               ),
             ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildAttendancePhoto(dynamic path, String label) {
+    final url = path == null ? null : ApiClient.getApiFileUrl(path.toString());
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          height: 160,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+            color: const Color(0xFFF9FAFB),
+          ),
+          child: url == null || url.isEmpty
+              ? const Center(child: Text('No photo uploaded'))
+              : ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, _, __) => const Center(
+                      child: Text('Failed to load image'),
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPreviewField(String label, dynamic value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Expanded(
+            child: Text(value?.toString() ?? '-'),
           ),
         ],
       ),

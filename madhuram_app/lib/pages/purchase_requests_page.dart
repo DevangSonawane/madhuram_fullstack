@@ -1383,18 +1383,22 @@ class _PurchaseRequestFormContentState
   bool _uploadingPr = false;
   bool _uploadingSig = false;
   bool _appliedProjectDefaults = false;
+  bool _loadingSamples = false;
+  bool _loadingMirs = false;
 
   late final TextEditingController _projectIdController;
   late final TextEditingController _projectNameController;
-  late final TextEditingController _sampleIdController;
   late final TextEditingController _workorderController;
   late final TextEditingController _locationController;
-  late final TextEditingController _mirNoController;
   late final TextEditingController _approvedByController;
   late final TextEditingController _remarksController;
   late final TextEditingController _dateController;
 
   String _urgency = 'Medium';
+  String _sampleId = 'none';
+  String _mirNo = 'none';
+  List<Map<String, dynamic>> _samples = [];
+  List<Map<String, dynamic>> _mirs = [];
   String _prFilePath = '';
   String _signatureFilePath = '';
   String? _prFileName;
@@ -1412,12 +1416,10 @@ class _PurchaseRequestFormContentState
     _projectNameController = TextEditingController(
       text: existing?.projectName ?? '',
     );
-    _sampleIdController = TextEditingController(text: existing?.sampleId ?? '');
     _workorderController = TextEditingController(
       text: existing?.workorderNo ?? '',
     );
     _locationController = TextEditingController(text: existing?.location ?? '');
-    _mirNoController = TextEditingController(text: existing?.mirNo ?? '');
     _approvedByController = TextEditingController(
       text: existing?.approvedBy ?? '',
     );
@@ -1428,6 +1430,9 @@ class _PurchaseRequestFormContentState
           : DateFormat('yyyy-MM-dd').format(DateTime.now()),
     );
     _urgency = existing?.urgency ?? 'Medium';
+    _sampleId =
+        (existing?.sampleId?.isNotEmpty == true ? existing!.sampleId! : 'none');
+    _mirNo = existing?.mirNo.isNotEmpty == true ? existing!.mirNo : 'none';
     _prFilePath = existing?.prFilePath ?? '';
     _signatureFilePath = existing?.signatureFilePath ?? '';
     _prFileName = _fileNameFromPath(_prFilePath);
@@ -1469,6 +1474,9 @@ class _PurchaseRequestFormContentState
         defaultProjectName.isNotEmpty) {
       _projectNameController.text = defaultProjectName;
     }
+    if (_projectIdController.text.trim().isNotEmpty) {
+      _loadSamplesAndMirs();
+    }
     _appliedProjectDefaults = true;
   }
 
@@ -1476,10 +1484,8 @@ class _PurchaseRequestFormContentState
   void dispose() {
     _projectIdController.dispose();
     _projectNameController.dispose();
-    _sampleIdController.dispose();
     _workorderController.dispose();
     _locationController.dispose();
-    _mirNoController.dispose();
     _approvedByController.dispose();
     _remarksController.dispose();
     _dateController.dispose();
@@ -1489,6 +1495,83 @@ class _PurchaseRequestFormContentState
   String? _fileNameFromPath(String path) {
     if (path.isEmpty) return null;
     return path.split(RegExp(r'[/\\]')).last;
+  }
+
+  Future<void> _loadSamplesAndMirs() async {
+    final projectId = _projectIdController.text.trim();
+    if (projectId.isEmpty) {
+      setState(() {
+        _samples = [];
+        _mirs = [];
+        _sampleId = 'none';
+        _mirNo = 'none';
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingSamples = true;
+      _loadingMirs = true;
+    });
+
+    final samplesRes = await ApiClient.getSamplesByProject(projectId);
+    final mirsRes = await ApiClient.getMirsByProject(projectId);
+    if (!mounted) return;
+
+    final samplesData =
+        samplesRes['success'] == true ? samplesRes['data'] : [];
+    final mirsData = mirsRes['success'] == true ? mirsRes['data'] : [];
+
+    final sampleList = samplesData is List ? samplesData : const [];
+    final mirList = mirsData is List ? mirsData : const [];
+
+    setState(() {
+      _samples = sampleList
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      _mirs = mirList
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      _loadingSamples = false;
+      _loadingMirs = false;
+      if (_sampleId != 'none' &&
+          !_samples.any(
+            (s) => _sampleValue(s) == _sampleId,
+          )) {
+        _sampleId = 'none';
+      }
+      if (_mirNo != 'none' && !_mirs.any((m) => _mirValue(m) == _mirNo)) {
+        _mirNo = 'none';
+      }
+    });
+  }
+
+  String _sampleValue(Map<String, dynamic> s) =>
+      (s['sample_id'] ?? s['id'] ?? '').toString();
+
+  String _sampleLabel(Map<String, dynamic> s) {
+    final id = _sampleValue(s);
+    final label =
+        (s['work_done'] ??
+                s['site_name'] ??
+                s['building_name'] ??
+                s['name'] ??
+                '')
+            .toString();
+    if (id.isEmpty) return label.isEmpty ? '-' : label;
+    if (label.isEmpty) return '#$id';
+    return '#$id - $label';
+  }
+
+  String _mirValue(Map<String, dynamic> m) =>
+      (m['mir_refrence_no'] ?? m['mir_id'] ?? m['id'] ?? '').toString();
+
+  String _mirLabel(Map<String, dynamic> m) {
+    final v = _mirValue(m);
+    if (v.isEmpty) return '-';
+    return v;
   }
 
   Future<void> _pickDate() async {
@@ -1582,7 +1665,7 @@ class _PurchaseRequestFormContentState
 
   Map<String, dynamic> _buildPayload() {
     final projectIdStr = _projectIdController.text.trim();
-    final sampleIdStr = _sampleIdController.text.trim();
+    final sampleIdStr = _sampleId == 'none' ? '' : _sampleId.trim();
     final projectIdInt = _parsePositiveIntOrNull(projectIdStr);
     final sampleIdInt = _parsePositiveIntOrNull(sampleIdStr);
     return {
@@ -1591,7 +1674,7 @@ class _PurchaseRequestFormContentState
       'project_name': _projectNameController.text.trim(),
       'workorder_no': _workorderController.text.trim(),
       'location': _locationController.text.trim(),
-      'mirno': _mirNoController.text.trim(),
+      'mirno': _mirNo == 'none' ? '' : _mirNo.trim(),
       'urgency': _urgency,
       'date': _dateController.text.trim(),
       'approved_by': _approvedByController.text.trim(),
@@ -1704,6 +1787,7 @@ class _PurchaseRequestFormContentState
                 labelText: 'Project ID *',
                 hintText: 'e.g. 5',
                 keyboardType: TextInputType.number,
+                onChanged: (_) => _loadSamplesAndMirs(),
               ),
             ),
             const SizedBox(width: 12),
@@ -1720,11 +1804,30 @@ class _PurchaseRequestFormContentState
         Row(
           children: [
             Expanded(
-              child: MadInput(
-                controller: _sampleIdController,
+              child: MadSelect<String>(
                 labelText: 'Sample ID',
-                hintText: 'Optional',
-                keyboardType: TextInputType.number,
+                value: _sampleId,
+                placeholder:
+                    _loadingSamples ? 'Loading samples...' : 'Optional',
+                options: [
+                  const MadSelectOption(value: 'none', label: 'None'),
+                  if (_sampleId != 'none' &&
+                      !_samples.any(
+                        (s) => _sampleValue(s) == _sampleId,
+                      ))
+                    MadSelectOption(
+                      value: _sampleId,
+                      label: 'Sample #$_sampleId (current)',
+                    ),
+                  ..._samples.map(
+                    (sample) => MadSelectOption(
+                      value: _sampleValue(sample),
+                      label: _sampleLabel(sample),
+                    ),
+                  ),
+                ],
+                disabled: _loadingSamples,
+                onChanged: (v) => setState(() => _sampleId = v ?? 'none'),
               ),
             ),
             const SizedBox(width: 12),
@@ -1775,10 +1878,27 @@ class _PurchaseRequestFormContentState
           hintText: 'Location',
         ),
         const SizedBox(height: 12),
-        MadInput(
-          controller: _mirNoController,
+        MadSelect<String>(
           labelText: 'MIR No',
-          hintText: 'MIR reference',
+          value: _mirNo,
+          placeholder: _loadingMirs ? 'Loading MIR...' : 'Select MIR No',
+          options: [
+            const MadSelectOption(value: 'none', label: 'None'),
+            if (_mirNo != 'none' &&
+                !_mirs.any((m) => _mirValue(m) == _mirNo))
+              MadSelectOption(
+                value: _mirNo,
+                label: 'MIR $_mirNo (current)',
+              ),
+            ..._mirs.map(
+              (mir) => MadSelectOption(
+                value: _mirValue(mir),
+                label: _mirLabel(mir),
+              ),
+            ),
+          ],
+          disabled: _loadingMirs,
+          onChanged: (v) => setState(() => _mirNo = v ?? 'none'),
         ),
         const SizedBox(height: 12),
         MadInput(

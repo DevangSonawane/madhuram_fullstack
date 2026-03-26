@@ -675,10 +675,12 @@ class _BOQPageState extends State<BOQPage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted).withOpacity(0.35),
+                color: (isDark ? AppTheme.darkMuted : AppTheme.lightMuted)
+                    .withOpacity(0.35),
                 border: Border(
                   bottom: BorderSide(
-                    color: (isDark ? Colors.white : Colors.black).withOpacity(0.08),
+                    color:
+                        (isDark ? Colors.white : Colors.black).withOpacity(0.08),
                   ),
                 ),
               ),
@@ -687,15 +689,19 @@ class _BOQPageState extends State<BOQPage> {
                   Icon(
                     Icons.swipe,
                     size: 16,
-                    color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                    color: isDark
+                        ? AppTheme.darkMutedForeground
+                        : AppTheme.lightMutedForeground,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Swipe horizontally to view all keys and values',
+                      'Swipe horizontally to view all columns',
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? AppTheme.darkMutedForeground : AppTheme.lightMutedForeground,
+                        color: isDark
+                            ? AppTheme.darkMutedForeground
+                            : AppTheme.lightMutedForeground,
                       ),
                     ),
                   ),
@@ -703,7 +709,11 @@ class _BOQPageState extends State<BOQPage> {
               ),
             ),
           SizedBox(
-            height: responsive.value(mobile: 420.0, tablet: 470.0, desktop: 520.0),
+            height: responsive.value(
+              mobile: 420.0,
+              tablet: 470.0,
+              desktop: 520.0,
+            ),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: SizedBox(
@@ -716,9 +726,11 @@ class _BOQPageState extends State<BOQPage> {
                         itemCount: _paginatedItems.length,
                         separatorBuilder: (_, __) => Divider(
                           height: 1,
-                          color: (isDark ? Colors.white : Colors.black).withOpacity(0.06),
+                          color: (isDark ? Colors.white : Colors.black)
+                              .withOpacity(0.06),
                         ),
-                        itemBuilder: (context, index) => _buildTableDataRow(_paginatedItems[index], isDark),
+                        itemBuilder: (context, index) =>
+                            _buildTableDataRow(_paginatedItems[index], isDark),
                       ),
                     ),
                     _buildTableTotalRow(isDark),
@@ -727,12 +739,12 @@ class _BOQPageState extends State<BOQPage> {
               ),
             ),
           ),
-          if (_totalPages > 1)
-            _buildTablePagination(isDark, isMobile),
+          if (_totalPages > 1) _buildTablePagination(isDark, isMobile),
         ],
       ),
     );
   }
+
 
   Widget _buildTableHeader(bool isDark) {
     return Container(
