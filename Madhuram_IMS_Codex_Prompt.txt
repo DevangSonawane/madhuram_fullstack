@@ -1,0 +1,828 @@
+﻿MADHURAM IMS - FRONTEND INTEGRATION
+Codex Implementation Prompt
+React · Vite · TailwindCSS · shadcn/ui  |  April 2026
+
+0.  How to Use This Document
+This document is a self-contained implementation brief for Codex (or any AI coding assistant). Every section describes exactly what to build, where to put it, and how it must work. Read it top-to-bottom and implement in the order presented.
+The project is a React + Vite frontend for an Inventory Management System (IMS). The backend API is already deployed. Your job is purely frontend: adding new API calls, creating new pages, and updating existing pages.
+
+Tech stack
+• Framework: React 18 with React Router v6
+• Build tool: Vite
+• Styling: TailwindCSS + shadcn/ui component library
+• State: Redux Toolkit (auth slice) + React Context (project, notification, theme)
+• API layer: src/lib/api.js - a single export object with all fetch calls
+• Auth: Bearer token stored in localStorage key "inventory_user" as JSON {token, user_id, ...}
+
+File structure conventions
+• All API methods live in src/lib/api.js - append new methods to the existing export object
+• All pages live in src/pages/
+• New routes are registered in src/App.jsx inside the existing <Routes> tree
+• Reusable components live in src/components/
+• shadcn/ui primitives are in src/components/ui/ - use them, do not re-invent
+
+Critical rules
+Never break existing functionality. Only add new code or extend existing functions. Do not remove or rename any existing api.js methods.
+• Keep every fetch in api.js - no bare fetch() calls in pages or components
+• All API calls must include getAuthHeaders() (Bearer token)
+• Use handleResponse() for every response - it normalises errors and blobs
+• Import components from @/components/ui/ using the path alias, not relative paths
+• Use useToast() from @/hooks/use-toast for all success/error feedback
+
+
+1.  Context - Business Flow & What Was Added
+The IMS tracks materials from requisition to consumption. Every item in inventory follows this exact journey:
+
+Sample  →  PR (Purchase Requisition)  →  PO (Purchase Order)  →  DC (Delivery Challan)  →  Inventory  →  Used in Sample / PR / MIR
+
+Key design decisions in the backend
+• DC creation auto-adds to inventory: When a Delivery Challan is created, all its items are automatically inserted into the Inventories table. No separate action is needed on the frontend.
+• Stock deduction is automatic: When a PR item, Sample item, or MIR item includes inventory_id + issued_qty, the backend deducts stock automatically on save. No separate stock-out call is needed.
+• Auto-match fallback: If inventory_id is not set, the backend provides POST endpoints to fuzzy-match items by name. The frontend should offer a "Link to Inventory" button for older records.
+• Full audit trail: Every stock change is written to inventory_movements and inventory_history. The frontend needs to surface this data via dedicated pages.
+
+What the two API docs add (new vs existing)
+AreaStatusSummary/api/inventory-traceNEW - missing entirely6 endpoints for inventory search dropdowns, auto-matching, and chain provenance/api/inventory-historyNEW - missing entirely5 endpoints for full audit log with filters and dashboard summary/api/inventory/:id/movementNEW - missing from api.jsManual stock-in / stock-out / adjustment/api/inventory/searchNEW - missing from api.jsKeyword search with project filter/api/inventory/:id/historyNEW - missing from api.jsMovement log for one item/api/inventory/:id/backgroundNEW - missing from api.jsProvenance: DC → PO → PR → Sample chain/api/dc/:id/sync-inventoryNEW - missing from api.jsForce re-sync DC items into inventory/api/vendor-price-list/bulk-upload-inventory/templateNEW - missing from api.jsDownload Excel upload template/api/access (all routes)DONE - already integratedAccess control API fully wired/api/dc CRUDDONE - already integratedCreate, read, update, delete DC all present
+
+2.  src/lib/api.js - All New Methods to Add
+Append every method below inside the existing export const api = { ... } object. Place them after the last existing method (deleteInventory). Do not touch any existing method.
+
+All methods follow the same pattern as existing ones: fetch → handleResponse. The getAuthHeaders() and handleResponse() helpers already exist at the bottom of the file.
+
+2.1  Inventory - missing operations
+searchInventories
+Searches inventory items by keyword. Used on the Inventory listing page search box.
+searchInventories: async ({ q, project_id } = {}) => {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (project_id) params.set("project_id", String(project_id));
+  const query = params.toString();
+  const response = await fetch(`${BASE_URL}/api/inventory/search${query ? "?" + query : ""}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+getInventoryItemHistory
+Returns the full movement log for a single inventory item (stock-in, stock-out, adjustments).
+getInventoryItemHistory: async (id) => {
+  const response = await fetch(`${BASE_URL}/api/inventory/${id}/history`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+getInventoryItemBackground
+Returns the provenance chain for one inventory item: which DC, PO, PR, and Sample sourced it.
+getInventoryItemBackground: async (id) => {
+  const response = await fetch(`${BASE_URL}/api/inventory/${id}/background`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+createInventoryMovement
+Posts a manual stock-in, stock-out, or adjustment movement for an inventory item.
+Payload fields:
+• movement_type (required): "in" | "out" | "adjustment"
+• quantity (required): number - always positive; direction comes from movement_type
+• source_type (optional): "dc" | "po" | "pr" | "sample" | "mir" | "manual"
+• source_id (optional): integer - ID of the linked document
+• source_ref (optional): string - human-readable reference (challan number etc.)
+• project_id (optional): integer
+• notes (optional): string - reason for movement
+createInventoryMovement: async (id, data) => {
+  const response = await fetch(`${BASE_URL}/api/inventory/${id}/movement`, {
+    method: "POST",
+    headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return handleResponse(response);
+},
+
+2.2  Delivery Challan - sync endpoint
+syncDcInventory
+Force re-syncs a DC's items into inventory. Use when auto_sync_inventory was false on creation, or to fix a broken sync.
+syncDcInventory: async (id) => {
+  const response = await fetch(`${BASE_URL}/api/dc/${id}/sync-inventory`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+2.3  Inventory Trace - all 6 endpoints
+These are the most important new endpoints. They power the inventory-picker dropdown used inside PR, Sample, and MIR create/edit forms.
+
+searchInventoryTrace
+Live search for the item-picker dropdown. Call this as the user types (debounce 300ms). Returns matching inventory items with available stock and a source chain label.
+Query parameters:
+• q (required): search keyword (item name or brand)
+• project_id (optional): prioritises items from this project (shown first)
+• min_qty (optional): only return items with available stock >= this value (default 0)
+Each result includes source_chain_label - a human-readable string like: "DC: DC-2024-001 ← PO: PO-45 ← Sample: Block A". Show this in the dropdown so the user can confirm the correct item.
+searchInventoryTrace: async ({ q, project_id, min_qty } = {}) => {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (project_id) params.set("project_id", String(project_id));
+  if (min_qty != null) params.set("min_qty", String(min_qty));
+  const query = params.toString();
+  const response = await fetch(`${BASE_URL}/api/inventory-trace/search${query ? "?" + query : ""}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+autoMatchPrInventory
+Auto-links unmatched PR items to inventory by name/chain matching. Call after the user clicks a "Link to Inventory" button on a PR that has no inventory_id on its items. Pass force: true to re-match items that already have an inventory_id.
+autoMatchPrInventory: async (prId, { force } = {}) => {
+  const response = await fetch(`${BASE_URL}/api/inventory-trace/match/pr/${prId}`, {
+    method: "POST",
+    headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ force: Boolean(force) }),
+  });
+  return handleResponse(response);
+},
+
+autoMatchSampleInventory
+Same as autoMatchPrInventory but for Samples.
+autoMatchSampleInventory: async (sampleId, { force } = {}) => {
+  const response = await fetch(`${BASE_URL}/api/inventory-trace/match/sample/${sampleId}`, {
+    method: "POST",
+    headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ force: Boolean(force) }),
+  });
+  return handleResponse(response);
+},
+
+getInventoryChain
+Returns the complete life story of one inventory item: upstream provenance (Sample → PR → PO → DC) plus a movement timeline (stock-in events, stock-out events, current balance).
+Response shape:
+{ item: { inventory_id, name, brand, units, current_balance },
+  upstream_chain: {
+    sample: { sample_id, building_name, label },
+    pr:     { pr_id, project, label },
+    po:     { po_id, order_no, vendor_name, label },
+    dc:     { dc_id, challan_number, label }
+  },
+  summary: { total_stocked_in, total_consumed, current_balance },
+  timeline: [
+    { type: "in",  label: "Stocked in - DC-2024-001", quantity: 200, balance_after: 200 },
+    { type: "out", label: "Issued to PR #9",           quantity: 100, balance_after: 100 }
+  ]
+}
+
+getInventoryChain: async (inventoryId) => {
+  const response = await fetch(`${BASE_URL}/api/inventory-trace/chain/inventory/${inventoryId}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+getSampleChain
+Returns the downstream chain for a Sample: which PR, PO, DC, and Inventory items it generated.
+getSampleChain: async (sampleId) => {
+  const response = await fetch(`${BASE_URL}/api/inventory-trace/chain/sample/${sampleId}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+getPrChain
+Returns PR items with their linked inventory + source chain status.
+getPrChain: async (prId) => {
+  const response = await fetch(`${BASE_URL}/api/inventory-trace/chain/pr/${prId}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+getDcChain
+Returns which inventory items a DC created and where each went subsequently.
+getDcChain: async (dcId) => {
+  const response = await fetch(`${BASE_URL}/api/inventory-trace/chain/dc/${dcId}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+2.4  Inventory History - all 5 endpoints
+getInventoryHistory
+Returns paginated history across ALL inventory items. Supports filters, pagination, and sorting.
+Parameters:
+• inventory_id: filter to a specific item
+• user_id: filter to changes by a specific user
+• change_type: "stock_in" | "stock_out" | "adjustment" | "created" | "updated" | "deleted"
+• source_type: "dc" | "po" | "pr" | "sample" | "mir" | "manual"
+• project_id: filter to a specific project
+• from / to: ISO date strings (YYYY-MM-DD)
+• page / limit: pagination (default page=1, limit=20, max=100)
+• sort: "asc" | "desc" (default desc)
+getInventoryHistory: async (filters = {}) => {
+  const params = new URLSearchParams();
+  const allowed = ["inventory_id","user_id","change_type","source_type","project_id","from","to","page","limit","sort"];
+  allowed.forEach((k) => { if (filters[k] != null && filters[k] !== "") params.set(k, String(filters[k])); });
+  const query = params.toString();
+  const response = await fetch(`${BASE_URL}/api/inventory-history${query ? "?" + query : ""}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+getInventoryHistorySummary
+Returns dashboard-level aggregated stats (default: last 30 days). Use on the history page header.
+Optional from/to date filters (ISO strings).
+getInventoryHistorySummary: async ({ from, to } = {}) => {
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const query = params.toString();
+  const response = await fetch(`${BASE_URL}/api/inventory-history/summary${query ? "?" + query : ""}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+getInventoryHistoryByItem
+Full history for one inventory item. Returns item details alongside the history log.
+Supports change_type, from, to, page, limit, sort query params.
+getInventoryHistoryByItem: async (inventoryId, filters = {}) => {
+  const params = new URLSearchParams();
+  const allowed = ["change_type","from","to","page","limit","sort"];
+  allowed.forEach((k) => { if (filters[k] != null && filters[k] !== "") params.set(k, String(filters[k])); });
+  const query = params.toString();
+  const response = await fetch(`${BASE_URL}/api/inventory-history/item/${inventoryId}${query ? "?" + query : ""}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+getInventoryHistoryByUser
+All inventory changes made by a specific user. Supports change_type, from, to, page, limit, sort.
+getInventoryHistoryByUser: async (userId, filters = {}) => {
+  const params = new URLSearchParams();
+  const allowed = ["change_type","from","to","page","limit","sort"];
+  allowed.forEach((k) => { if (filters[k] != null && filters[k] !== "") params.set(k, String(filters[k])); });
+  const query = params.toString();
+  const response = await fetch(`${BASE_URL}/api/inventory-history/user/${userId}${query ? "?" + query : ""}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+getInventoryHistoryEntry
+Fetches a single history record by its history_id.
+getInventoryHistoryEntry: async (historyId) => {
+  const response = await fetch(`${BASE_URL}/api/inventory-history/${historyId}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+},
+
+2.5  Bulk inventory upload - download template
+downloadBulkInventoryTemplate
+Downloads the official Excel template for bulk inventory upload. Returns a Blob.
+downloadBulkInventoryTemplate: async () => {
+  const response = await fetch(`${BASE_URL}/api/vendor-price-list/bulk-upload-inventory/template`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response); // returns { success: true, data: Blob, isBlob: true }
+},
+
+
+3.  Shared Component - InventoryPicker
+This is the most important new component. It is used inside the PR create form, Sample create/edit form, and MIR create form. Build it once and import it everywhere.
+File: src/components/InventoryPicker.jsx
+
+3.1  What it does
+InventoryPicker is an inline search field that appears on each item row inside a form. As the user types a material description, it calls /api/inventory-trace/search (debounced 300ms) and shows a dropdown of matching inventory items. When the user selects an item, the component calls an onSelect callback with the chosen inventory_id and available quantity.
+
+3.2  Props
+PropTypeDescriptionproject_idnumber | nullCurrent project ID - passed to the search endpoint to prioritise matching itemsinitialValuestringPre-fill the search input (e.g. the item description already typed in the row)selectedIdnumber | nullCurrently linked inventory_id - highlights the selected item in the listonSelectfunctionCalled with ({ inventory_id, name, brand, available_qty, units, source_chain_label }) when user picks a rowonClearfunctionCalled when the user removes the selection (X button)disabledbooleanDisables the field (e.g. when form is in view-only mode)minQtynumberOnly show items with available_qty >= minQty (default 0)
+3.3  Behaviour
+• Debounce the search call by 300ms after the last keystroke
+• Show a loading spinner inside the dropdown while the request is in flight
+• Each dropdown row shows: item name (bold), brand (muted), available quantity + units, and source_chain_label on a second line
+• If no results, show "No inventory items found for this search"
+• Once an item is selected: collapse the dropdown, show a green confirmation chip inside the field with the item name and available qty, and render a small X button to clear it
+• If selectedId is set on mount, fetch the item details and show the chip immediately without opening the dropdown
+• The chip text: "{item name} - {available_qty} {units} available"
+• Source chain label appears below the chip in muted text: "DC: DC-2024-001 ← PO-45 ← Sample: Block A"
+
+3.4  Skeleton implementation
+import { useState, useRef, useCallback } from "react";
+import { api } from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { X, Search, Loader2, CheckCircle2 } from "lucide-react";
+
+export default function InventoryPicker({ project_id, initialValue = "", selectedId,
+                                          onSelect, onClear, disabled, minQty = 0 }) {
+  const [query, setQuery]     = useState(initialValue);
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen]       = useState(false);
+  const [selected, setSelected] = useState(null);
+  const timerRef = useRef(null);
+
+  const search = useCallback(async (q) => {
+    if (!q || q.length < 2) { setResults([]); setOpen(false); return; }
+    setLoading(true);
+    const res = await api.searchInventoryTrace({ q, project_id, min_qty: minQty });
+    setLoading(false);
+    if (res.success && Array.isArray(res.data)) {
+      setResults(res.data);
+      setOpen(true);
+    }
+  }, [project_id, minQty]);
+
+  const handleChange = (e) => {
+    const v = e.target.value;
+    setQuery(v);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => search(v), 300);
+  };
+
+  const handlePick = (item) => {
+    setSelected(item);
+    setOpen(false);
+    setQuery("");
+    onSelect?.(item);
+  };
+
+  const handleClear = () => {
+    setSelected(null);
+    setQuery("");
+    onClear?.();
+  };
+
+  // Render chip when item is selected
+  if (selected) return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2 p-2 border rounded-md bg-green-50 border-green-300">
+        <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+        <span className="text-sm font-medium flex-1">
+          {selected.name} - {selected.available_qty} {selected.units} available
+        </span>
+        {!disabled && <button onClick={handleClear}><X className="h-4 w-4 text-gray-400" /></button>}
+      </div>
+      {selected.source_chain_label && (
+        <span className="text-xs text-muted-foreground pl-2">{selected.source_chain_label}</span>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input className="pl-8" placeholder="Search inventory..." value={query}
+               onChange={handleChange} disabled={disabled} />
+        {loading && <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
+          {results.map((item) => (
+            <button key={item.inventory_id} className="w-full text-left p-3 hover:bg-gray-50 border-b last:border-0"
+              onClick={() => handlePick(item)}>
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-sm">{item.name}</span>
+                <Badge variant="outline">{item.available_qty} {item.units}</Badge>
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">{item.brand}</div>
+              {item.source_chain_label && (
+                <div className="text-xs text-blue-600 mt-0.5">{item.source_chain_label}</div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && results.length === 0 && !loading && (
+        <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-sm p-3 text-sm text-muted-foreground">
+          No inventory items found for this search.
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+4.  Existing Pages - Required Updates
+4.1  PurchaseRequestCreate.jsx
+File: src/pages/PurchaseRequestCreate.jsx
+This page already exists. Add the InventoryPicker to each item row in the PR form.
+
+Changes required
+• Import InventoryPicker from @/components/InventoryPicker
+• Each item in the items array state must have two new optional fields: inventory_id (number | null) and issued_qty (number | null)
+• Below the "Material Description" input in each item row, render an InventoryPicker with project_id from the form state, initialValue set to the material_description field, and selectedId set to item.inventory_id
+• When InventoryPicker calls onSelect, update the item's inventory_id to the selected inventory_id. Also set issued_qty to the item's req_qty if issued_qty is null
+• When InventoryPicker calls onClear, set inventory_id and issued_qty to null on the item
+• When submitting, include inventory_id and issued_qty in each item object in the POST body (only if inventory_id is not null)
+
+Item payload shape (with inventory link)
+{
+  material_description: "Vitrified Tile 60x60",
+  unit: "sqft",
+  req_qty: 100,
+  make: "Kajaria",
+  place_of_utilisation: "Block A - Floor 3",
+  inventory_id: 12,    // optional - from InventoryPicker
+  issued_qty: 100      // optional - defaults to req_qty if omitted
+}
+
+If inventory_id is provided, the backend automatically deducts stock on save. No separate API call is needed.
+
+Add "Link to Inventory" button on PR list/detail
+On the PurchaseRequests.jsx page (or PR detail view), add a button for PRs where the items do not have inventory_id set. The button label is "Link to Inventory". On click:
+• Call api.autoMatchPrInventory(pr.pr_id)
+• Show a loading state on the button
+• On success, show a toast: "Inventory linked successfully. Review the matches."
+• On error, show a toast with the error message
+• After success, re-fetch the PR to show updated inventory links
+
+4.2  SampleEdit.jsx (and Samples create flow)
+File: src/pages/SampleEdit.jsx
+Same pattern as PurchaseRequestCreate. Apply InventoryPicker to each row in the item_description array.
+
+Changes required
+• Each item in item_description must have two new optional fields: inventory_id and issued_qty
+• Render InventoryPicker below the "Description" field in each item row
+• Include inventory_id and issued_qty in the PUT payload when saving
+• Add "Link to Inventory" button on the Samples list for samples without inventory links - calls api.autoMatchSampleInventory(sample.sample_id)
+
+Item payload shape
+{
+  sr_no: 1,
+  description: "Vitrified Tile 60x60",
+  quantity: 50,
+  value: 4275,
+  inventory_id: 12,   // optional - from InventoryPicker
+  issued_qty: 50      // optional - defaults to quantity if omitted
+}
+
+4.3  MIRCreate.jsx
+File: src/pages/MIRCreate.jsx
+Same pattern. Apply InventoryPicker to each item row.
+
+Item payload shape
+{
+  srno: 1,
+  description: "Copper Wire 2.5 sqmm",
+  qty: 5,
+  UOM: "rmt",
+  Rate: 320,
+  inventory_id: 8,   // optional - from InventoryPicker
+  issued_qty: 5      // optional - defaults to qty if omitted
+}
+
+4.4  Inventory.jsx
+File: src/pages/Inventory.jsx
+The page already exists with basic CRUD. Add the following panels and actions.
+
+4.4.1  Search bar
+Replace the existing client-side filter with a server-side search using api.searchInventories. Add a text input at the top of the page. On input change (debounced 400ms), call searchInventories({ q: inputValue, project_id }). Replace the items state with the search results. When the search input is cleared, revert to the full list (api.getInventoriesByProject or api.getInventories).
+
+4.4.2  Manual stock movement dialog
+Add a "Adjust Stock" button (icon: ArrowUpDown from lucide-react) on each item row in the inventory table. On click, open a Dialog containing a small form with:
+• Movement type: Select dropdown - "Stock In", "Stock Out", "Adjustment"
+• Quantity: Number input (always positive)
+• Notes: Textarea (optional)
+• Submit: Calls api.createInventoryMovement(item.inventory_id, { movement_type, quantity, notes })
+On success: toast "Stock updated successfully", close dialog, re-fetch the item or the full list.
+On error: toast with error message, keep dialog open.
+
+4.4.3  Item detail drawer
+Add a "View Details" button (or make the item row clickable) that opens a Sheet (side drawer from shadcn/ui) showing:
+• Provenance: Call api.getInventoryItemBackground(id). Show a horizontal breadcrumb: Sample → PR → PO → DC → Inventory. Each step shows the document number/name. Gray out steps that are null (item was added manually without a full chain).
+• Movement history: Call api.getInventoryItemHistory(id). Show a scrollable table with columns: Date, Type (IN/OUT/ADJ badge), Quantity, Balance After, Source Document, Notes, Performed By.
+• Summary bar: Show three stat cards at the top of the drawer: Total Stocked In, Total Consumed, Current Balance.
+
+4.5  Challans / ChallanItemDetail.jsx
+File: src/pages/ChallanItemDetail.jsx (or whichever page shows a single DC detail)
+
+Add "Inventory Impact" section
+After the existing DC details, add a collapsible section titled "Inventory Impact". On expand (or on page load), call api.getDcChain(dc.dc_id). Render a table with:
+• Item name and brand
+• Quantity stocked in
+• Current balance remaining
+• Where it was used (list of document labels from timeline - e.g. "Issued to PR #9")
+Add a "Re-sync Inventory" button at the top of this section. On click, call api.syncDcInventory(dc.dc_id). Show a success/error toast.
+
+4.6  AddInventory.jsx - payload fix
+File: src/pages/AddInventory.jsx
+The current api.createInventory method strips several fields. Update the payload construction to also pass through:
+• project_id: from the currently selected project (use useProject() context)
+• notes: from a textarea field labelled "Notes (opening stock reason)"
+• user_id: from the logged-in user (useAuth() context)
+• user_name: from the logged-in user
+In api.js, update the createInventory method to include these fields in the payload object without removing any existing fields.
+
+
+5.  New Pages to Create
+5.1  Inventory History Page
+File: src/pages/InventoryHistory.jsx
+Route: /inventory-history (register in App.jsx inside the existing ProtectedRoute + MainLayout tree)
+
+Page structure
+The page has three main sections stacked vertically: Summary Cards, Filter Bar, History Table.
+
+Summary Cards
+On mount, call api.getInventoryHistorySummary(). Show 5 stat cards in a grid (2 columns on mobile, 5 on desktop):
+CardValue from APITotal Eventssummary.total_eventsStock Insummary.total_stock_in (with unit)Stock Outsummary.total_stock_outItems Affectedsummary.unique_itemsActive Userssummary.unique_users
+Filter Bar
+A horizontal row of filter controls:
+• Date range: two date inputs (from / to)
+• Change type: Select dropdown with options All, Stock In, Stock Out, Adjustment, Created, Updated, Deleted
+• Source type: Select dropdown with options All, DC, PO, PR, Sample, MIR, Manual
+• Project: Select dropdown populated from existing projects (use api.getProjects())
+• Reset Filters button
+On any filter change, call api.getInventoryHistory(filters) and update the table. Debounce 400ms for date inputs.
+
+History Table
+Paginated table with columns:
+ColumnSource fieldNotesDatecreated_atFormat: DD MMM YYYY HH:mmItemitem_name + item_brandName bold, brand muted belowTypechange_typeColored badge (see below)Stock Instock_inShow 0 as -Stock Outstock_outShow 0 as -Balance Afterbalance_afterSourcesource_type + source_refe.g. "DC: DC-2024-001"Performed Byperformed_by_name
+Badge colours for change_type:
+• "stock_in" → green badge ("Stock In")
+• "stock_out" → red badge ("Stock Out")
+• "adjustment" → yellow/amber badge ("Adjustment")
+• "created" → blue badge ("Created")
+• "updated" → gray badge ("Updated")
+• "deleted" → red outline badge ("Deleted")
+
+Pagination
+Show Previous / Next buttons below the table. Disable Previous on page 1 and Next when has_next is false. Show "Page X of Y | Total Z records" label.
+
+5.2  Inventory Detail / Trace Page
+File: src/pages/InventoryDetail.jsx
+Route: /inventory/:id - register in App.jsx. Make the item name in the Inventory.jsx table a clickable link to this route.
+
+Page structure
+Call api.getInventoryChain(id) on mount. The page has four sections:
+
+1. Header
+Show item name (H1), brand (muted), units, and three stat badges: Stocked In, Consumed, Current Balance. Use summary from the API response.
+
+2. Provenance breadcrumb
+A horizontal card showing the upstream_chain. Render four boxes connected by arrows:
+• Sample box: label from upstream_chain.sample.label (or "No Sample" if null)
+• PR box: label from upstream_chain.pr.label (or "No PR")
+• PO box: label from upstream_chain.po.label (or "No PO")
+• DC box: label from upstream_chain.dc.label (or "No DC")
+Each non-null box is clickable and navigates to the relevant detail page (e.g. /challans/:dcId, /purchase-orders/:poId). Gray out null boxes.
+
+3. Movement Timeline
+A scrollable list of timeline entries from the timeline array. Each entry shows:
+• Direction icon: ArrowDownCircle (green) for "in", ArrowUpCircle (red) for "out"
+• Label from timeline[n].label
+• Quantity (bold)
+• Balance after (muted, right-aligned): "Balance: X units"
+
+4. Back button
+A "Back to Inventory" button using useNavigate(-1) or navigate("/inventory").
+
+
+6.  App.jsx - Route Registration
+Add the following imports and routes to src/App.jsx.
+
+6.1  Add imports at the top
+import InventoryHistory from "@/pages/InventoryHistory";
+import InventoryDetail  from "@/pages/InventoryDetail";
+
+6.2  Add routes inside the existing MainLayout ProtectedRoute block
+Find the block that contains existing inventory routes (e.g. the <Route path="inventory" ...> lines). Add these two routes as siblings:
+<Route path="inventory-history" element={<InventoryHistory />} />
+<Route path="inventory/:id"     element={<InventoryDetail />}  />
+
+Verify that the :id route does not conflict with existing subroutes like "inventory/add". React Router matches routes in order - put static paths before dynamic ones.
+
+6.3  Add sidebar navigation links
+File: src/constants/menuItems.js (or whichever file defines the sidebar navigation)
+Add the new pages to the Inventory section of the menu:
+• "Inventory History" - icon: History (lucide-react), path: /inventory-history
+The Inventory Detail page is not in the sidebar (it is accessed by clicking an item in the Inventory table).
+
+
+7.  API Response Shapes - Quick Reference
+Use this section when building UI components so you know exactly which fields exist on each response.
+
+7.1  GET /api/inventory-trace/search
+Returns an array of inventory items. Each item has:
+FieldTypeDescriptioninventory_idintegerPrimary keynamestringItem / product namebrandstringBrand or manufacturerunitsstringUnit of measure (sqft / pcs / kg / mtr)available_qtynumberCurrent available stocksource_chain_labelstring"DC: DC-2024-001 ← PO: PO-45 ← Sample: Block A"
+7.2  GET /api/inventory-trace/chain/inventory/:id
+Full chain for one inventory item.
+{ item: { inventory_id, name, brand, units, current_balance },
+  upstream_chain: {
+    sample: { sample_id, building_name, label } | null,
+    pr:     { pr_id, project, label }            | null,
+    po:     { po_id, order_no, vendor_name, label } | null,
+    dc:     { dc_id, challan_number, label }     | null
+  },
+  summary: { total_stocked_in, total_consumed, current_balance },
+  timeline: [{ type: "in"|"out", label, quantity, balance_after }]
+}
+
+7.3  GET /api/inventory-history (paginated list)
+{ data: [ {
+    history_id, inventory_id, item_name, item_brand, item_units,
+    change_type,         // "stock_in" | "stock_out" | "adjustment" | "created" | "updated" | "deleted"
+    stock_in,            // number (0 if stock_out event)
+    stock_out,           // number (0 if stock_in event)
+    balance_before,
+    balance_after,
+    source_type,         // "dc" | "po" | "pr" | "sample" | "mir" | "manual"
+    source_id,
+    source_ref,          // human-readable ref e.g. "DC-2024-001"
+    project_id,
+    project_name,
+    notes,
+    performed_by,        // UUID
+    performed_by_name,
+    changed_fields,      // JSONB - only on "updated" events
+    created_at
+  }],
+  pagination: { total, total_pages, current_page, per_page, has_next, has_prev },
+  summary: { total_events, total_stock_in, total_stock_out, items_affected,
+             unique_users, stock_in_events, stock_out_events, adjustment_events,
+             created_events, updated_events },
+  filters_applied: { inventory_id, user_id, change_type, source_type, project_id, from, to }
+}
+
+7.4  GET /api/inventory-history/summary
+{ period: { from, to },
+  overall: { total_events, total_stock_in, total_stock_out, unique_items, unique_users, ... },
+  top_items: [{ inventory_id, item_name, item_brand, event_count, total_in, total_out, last_updated_at, last_updated_by }],
+  top_users: [{ performed_by, performed_by_name, total_actions, total_stock_in, total_stock_out, items_touched }],
+  daily_activity: [{ activity_date, event_count, stock_in, stock_out, active_users }]
+}
+
+7.5  POST /api/inventory/:id/movement - Request body
+FieldRequiredTypeDescriptionmovement_typeYesstring"in" | "out" | "adjustment"quantityYesnumberAlways positive - direction comes from movement_typesource_typeNostring"dc" | "po" | "pr" | "sample" | "mir" | "manual"source_idNointegerID of the linked documentsource_refNostringHuman-readable referenceproject_idNointegerProject this movement is fornotesNostringReason for movement
+
+8.  Implementation Order - Do This Exactly
+Follow this sequence to avoid dependency issues. Each step is self-contained and testable before moving to the next.
+
+StepTaskSuccess criterion1Add all new api.js methods (Section 2)api.searchInventoryTrace, api.getInventoryHistory, etc. are callable without errors2Build InventoryPicker component (Section 3)Component renders, search debounces, dropdown opens, selection shows chip3Update PurchaseRequestCreate.jsx (Section 4.1)Each item row shows InventoryPicker; inventory_id included in POST body4Update SampleEdit.jsx (Section 4.2)Same as step 3 but for samples5Update MIRCreate.jsx (Section 4.3)Same as step 3 but for MIR items6Update Inventory.jsx (Section 4.4)Server-side search works; adjust-stock dialog opens and posts; detail drawer shows history and provenance7Update ChallanItemDetail.jsx (Section 4.5)"Inventory Impact" section appears and shows DC chain data; re-sync button calls syncDcInventory8Update AddInventory.jsx (Section 4.6)createInventory payload includes project_id, notes, user_id, user_name9Create InventoryHistory.jsx (Section 5.1)Page loads, summary cards show, table is paginated, filters work10Create InventoryDetail.jsx (Section 5.2)Page shows provenance breadcrumb and timeline from getInventoryChain11Register routes in App.jsx (Section 6)Navigating to /inventory-history and /inventory/:id renders the new pages12Add sidebar link for Inventory HistoryLink appears in the sidebar under the Inventory group
+
+9.  Do Not Touch - Existing Integrations Already Working
+The following are already correctly integrated. Do not modify them.
+
+WhatWhy it is already correctAll /api/access routesgetAccessCatalog, getAccessUser, getAccessAllUsers, checkAccess, updateAccessUserPage, updateAccessUserFunction, updateAccessUserBulk, revokeAccessUser - all present and testedAuthContext.jsxFetches user + access on login and refreshes every 10 seconds. Do not change the refresh logic.SettingsAccessControl.jsxFully wired to the access API. Do not modify.DC CRUD (api.js)createDc, getDcsByProject, getDcsByPo, getDcById, updateDc, deleteDc - all correctapi.uploadVendorPriceListFileCorrectly posts to /api/vendor-price-list/bulk-upload-inventory with multipart. Only add the template download method (Section 2.5).api.updateInventoryStockInCorrect PATCH endpoint. Do not change.MIR normalization in api.jsnormalizeMirPayload, normalizeMirItems, validateMirPayload - complex and tested. Only add inventory_id and issued_qty to the items returned by normalizeMirItems.
+
+10. Common Patterns Cheatsheet
+Copy-paste these patterns when building the new pages. They match how the existing codebase is written.
+
+10.1  Standard page skeleton
+import { useEffect, useState } from "react";
+import { useProject } from "@/contexts/useProject";
+import { useAuth }    from "@/contexts/useAuth";
+import { useToast }   from "@/hooks/use-toast";
+import { api }        from "@/lib/api";
+// shadcn/ui
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button }  from "@/components/ui/button";
+import { Badge }   from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+
+export default function MyPage() {
+  const { selectedProject } = useProject();
+  const { user }            = useAuth();
+  const { toast }           = useToast();
+  const projectId = selectedProject?.id ?? selectedProject?.project_id ?? null;
+
+  const [data, setData]       = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState(null);
+
+  useEffect(() => { fetchData(); }, [projectId]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    const res = await api.someMethod({ project_id: projectId });
+    setLoading(false);
+    if (res.success) { setData(res.data); }
+    else { setError(res.error); toast({ title: "Error", description: res.error, variant: "destructive" }); }
+  };
+
+  if (loading) return <Skeleton className="h-48 w-full" />;
+  if (error)   return <div className="text-destructive">{error}</div>;
+  return ( /* your JSX */ );
+}
+
+10.2  Getting user_id and user_name for API calls
+const { user } = useAuth();
+const user_id   = user?.user_id || user?.id || null;
+const user_name = user?.user_name || user?.name || user?.username || "";
+
+10.3  Dialog pattern (shadcn/ui)
+<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+  <DialogContent>
+    <DialogHeader><DialogTitle>Adjust Stock</DialogTitle></DialogHeader>
+    {/* form fields */}
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+      <Button onClick={handleSubmit} disabled={saving}>
+        {saving ? "Saving..." : "Save"}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+10.4  Sheet (side drawer) pattern
+<Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+  <SheetContent side="right" className="w-[480px] overflow-y-auto">
+    <SheetHeader><SheetTitle>Item Details</SheetTitle></SheetHeader>
+    {/* content */}
+  </SheetContent>
+</Sheet>
+
+10.5  Debounce pattern
+import { useRef, useCallback } from "react";
+const timerRef = useRef(null);
+const handleSearch = useCallback((value) => {
+  clearTimeout(timerRef.current);
+  timerRef.current = setTimeout(async () => {
+    const res = await api.searchInventories({ q: value });
+    if (res.success) setItems(res.data);
+  }, 400);
+}, []);
+
+10.6  Toast patterns
+// Success
+toast({ title: "Saved", description: "Stock updated successfully." });
+// Error
+toast({ title: "Error", description: res.error || "Something went wrong.", variant: "destructive" });
+
+10.7  Badge colour helper
+function changeTypeBadge(type) {
+  const map = {
+    stock_in:   { label: "Stock In",   className: "bg-green-100 text-green-800 border-green-300" },
+    stock_out:  { label: "Stock Out",  className: "bg-red-100   text-red-800   border-red-300"   },
+    adjustment: { label: "Adjustment", className: "bg-yellow-100 text-yellow-800 border-yellow-300" },
+    created:    { label: "Created",    className: "bg-blue-100  text-blue-800  border-blue-300"  },
+    updated:    { label: "Updated",    className: "bg-gray-100  text-gray-800  border-gray-300"  },
+    deleted:    { label: "Deleted",    className: "bg-red-50    text-red-700   border-red-200"   },
+  };
+  const { label, className } = map[type] || { label: type, className: "" };
+  return <Badge variant="outline" className={className}>{label}</Badge>;
+}
+
+
+11. Final Checklist - Before Marking Done
+Run through every item below before considering the implementation complete.
+
+api.js
+• searchInventories added
+• getInventoryItemHistory added
+• getInventoryItemBackground added
+• createInventoryMovement added
+• syncDcInventory added
+• searchInventoryTrace added
+• autoMatchPrInventory added
+• autoMatchSampleInventory added
+• getInventoryChain added
+• getSampleChain added
+• getPrChain added
+• getDcChain added
+• getInventoryHistory added
+• getInventoryHistorySummary added
+• getInventoryHistoryByItem added
+• getInventoryHistoryByUser added
+• getInventoryHistoryEntry added
+• downloadBulkInventoryTemplate added
+• createInventory updated to include project_id, notes, user_id, user_name
+• No existing method was renamed or removed
+
+Components
+• InventoryPicker.jsx created in src/components/
+• Debounce is 300ms
+• Chip shows on selection with clear button
+• source_chain_label shown below chip
+
+Existing pages updated
+• PurchaseRequestCreate - InventoryPicker on each item row, inventory_id in POST body
+• SampleEdit - InventoryPicker on each item row, inventory_id in PUT body
+• MIRCreate - InventoryPicker on each item row, inventory_id in POST body
+• Inventory - server search, adjust-stock dialog, item detail drawer with history and provenance
+• ChallanItemDetail - Inventory Impact section with re-sync button
+• AddInventory / createInventory - project_id, notes, user_id, user_name in payload
+
+New pages created
+• InventoryHistory.jsx - summary cards, filter bar, paginated table, badge colours
+• InventoryDetail.jsx - header stats, provenance breadcrumb, movement timeline
+
+Routing
+• App.jsx imports InventoryHistory and InventoryDetail
+• /inventory-history route registered
+• /inventory/:id route registered (after static /inventory/add route)
+• Sidebar has Inventory History link
+
+Quality
+• No bare fetch() calls outside api.js
+• Every API call uses getAuthHeaders()
+• Every API call passes through handleResponse()
+• Loading states shown while API calls are in flight
+• Error toasts shown on API failures
+• No console errors in browser
+
+End of implementation brief - Madhuram IMS Frontend Integration, April 2026
